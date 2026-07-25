@@ -1,0 +1,46 @@
+# =============================================================================
+# od.service — Open-Design headless runner (systemd --user)
+# =============================================================================
+# Installed by host-install/install.sh into ~/.config/systemd/user/od.service.
+# Do not edit in-place; edit the copy in the repo and re-run install.sh so the
+# change is tracked in git.
+#
+# Manage:
+#   systemctl --user start od
+#   systemctl --user stop od
+#   systemctl --user restart od
+#   systemctl --user status od
+#   journalctl --user -u od -f
+# =============================================================================
+
+[Unit]
+Description=Open-Design headless runner (Playwright + Chromium + Python renderer)
+Documentation=https://github.com/WOOWTECH/Woow_opendesign_docker_compose_all
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/od
+
+# Load nvm's default Node into PATH. `bash -lc` picks up ~/.bashrc which
+# sources nvm.sh; the `exec` then replaces the shell with node so systemd
+# tracks the real PID.
+ExecStart=/bin/bash -lc 'exec node %h/od/headless-entry.mjs'
+
+Environment=NODE_ENV=production
+Environment=OD_HOME=%h/od
+Environment=OD_CONFIG=%h/.config/od/config.json
+Environment=OD_PYTHON=%h/od/.venv/bin/python
+Environment=PLAYWRIGHT_BROWSERS_PATH=%h/.cache/ms-playwright
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+# Modest hardening (rootless-friendly; no CAP_* stuff since we're a user unit).
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

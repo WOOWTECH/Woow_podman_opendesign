@@ -1,0 +1,49 @@
+# Open-Design — podman-compose stack (podman branch)
+#
+# Runs the od-console web GUI as a rootless podman container.
+# The od-runner (headless-entry.mjs + headless-renderer.py) is NOT run
+# here — it lives on the host as a systemd --user service. See
+# ../host-install/ for that side of the deployment.
+#
+# Usage:
+#   cp .env.example .env
+#   # edit .env
+#   podman-compose up -d
+#
+# Access: http://<host>:4000
+
+version: "3.8"
+
+services:
+  od-console:
+    container_name: od-console
+    build:
+      context: ..
+      dockerfile: podman-stack/Dockerfile.console
+    image: localhost/od-console:latest
+    restart: unless-stopped
+    ports:
+      - "${OD_CONSOLE_PORT:-4000}:4000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      # If od-console ever needs to reach the host-side od-runner control
+      # endpoint, use host.containers.internal (rootless podman resolves
+      # this to the host gateway).
+      OD_RUNNER_HOST: "${OD_RUNNER_HOST:-host.containers.internal}"
+      OD_RUNNER_PORT: "${OD_RUNNER_PORT:-7001}"
+    volumes:
+      # Bind-mount shared OD config read-only so the console can display
+      # (but not mutate) the same settings the host runner sees.
+      - ${HOME}/.config/od:/config/od:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # Rootless-friendly: no privileged, no cap_add, no host networking.
+    security_opt:
+      - no-new-privileges:true
