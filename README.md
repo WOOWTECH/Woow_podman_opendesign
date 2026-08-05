@@ -1,31 +1,33 @@
-# Woow Open-Design — `podman` branch
+# Woow_podman_opendesign — Open-Design (hybrid host + podman)
 
-> **You are on the `podman` branch.** This branch represents a **hybrid
-> host + podman deployment**:
->
-> - **`od-runner`** (Playwright/Chromium + Python renderer) runs on the
->   Ubuntu host as a `systemd --user` service.
-> - **`od-console`** (the web GUI) runs in a **rootless podman container**
->   on port `:4000`.
-> - **No ttyd.** Container access is via host OpenSSH + `podman exec`.
->
-> Looking for the Kubernetes / K3S flavor? See the [`main`](../../tree/main)
-> or [`k3s`](../../tree/k3s) branches.
+[繁體中文](README_zh-TW.md)
+
+Podman / systemd deployment of **Woow Open-Design** for Ubuntu hosts. This is a
+**hybrid host + podman deployment**:
+
+- **`od-runner`** (Playwright/Chromium + Python renderer) runs on the Ubuntu
+  host as a `systemd --user` service.
+- **`od-console`** (web GUI) runs in a **rootless podman container** on port
+  `:4000`.
+- **No `ttyd`.** Container access is via host OpenSSH + `podman exec`.
+
+> **Looking for another platform?**
+> K3s / Kubernetes (now a Helm chart) → [Woow_k3s_opendesign](https://github.com/WOOWTECH/Woow_k3s_opendesign)
 
 ---
 
 ## Why hybrid?
 
 Playwright + Chromium want direct GPU and filesystem access, and the Python
-renderer wants host system libraries. Both perform noticeably better and
+renderer wants host system libraries. Both perform noticeably better and are
 simpler when they run on the host. The web console, on the other hand, is
-stateless and benefits from clean container lifecycle management — so it
-stays in podman.
+stateless and benefits from clean container lifecycle management — so it stays
+in podman.
 
 The host is also the sole access plane: the operator SSHs into the box and
-uses `systemctl --user` for host services and `podman exec` for the
-console container. This lets us remove the `ttyd` container that the
-`main`/`k3s` branches shipped.
+uses `systemctl --user` for host services and `podman exec` for the console
+container. This lets us remove the `ttyd` container that the Kubernetes flavor
+ships.
 
 ---
 
@@ -35,10 +37,9 @@ console container. This lets us remove the `ttyd` container that the
 # 1) SSH into the target host
 ssh user@your-n100-host
 
-# 2) Clone this branch
-git clone -b podman \
-  https://github.com/WOOWTECH/Woow_opendesign_docker_compose_all.git
-cd Woow_opendesign_docker_compose_all
+# 2) Clone this repo
+git clone https://github.com/WOOWTECH/Woow_podman_opendesign.git
+cd Woow_podman_opendesign
 
 # 3) Install the host-side runner (apt + nvm + Playwright + Python venv +
 #    systemd --user unit).  Idempotent; safe to re-run.
@@ -101,20 +102,20 @@ No `ttyd`, no in-container SSH daemon, no exposed shells.
 
 ## Config
 
-All config lives on the host under `~/.config/` — the containers only
-consume it read-only:
+All config lives on the host under `~/.config/` — the containers only consume
+it read-only:
 
-- **OD's own config**: `~/.config/od/config.json` (mode `0600`). Created
-  as a stub by `install.sh`. Bind-mounted read-only into `od-console` at
+- **OD's own config**: `~/.config/od/config.json` (mode `0600`). Created as a
+  stub by `install.sh`. Bind-mounted read-only into `od-console` at
   `/config/od`.
-- **Opencode / Claude Code auth** (shared with vk-host + openchamber, per
-  the host-migration design doc): `~/.config/opencode/config.json`,
-  `~/.local/share/opencode/auth.json` (mode `0600`), `~/.claude/`.
-  These are populated by the sibling installers in the
-  `Woow_ubuntu_version_control` repo.
+- **Opencode / Claude Code auth** (shared with vk-host + openchamber, per the
+  host-migration design doc): `~/.config/opencode/config.json`,
+  `~/.local/share/opencode/auth.json` (mode `0600`), `~/.claude/`. These are
+  populated by the sibling installers in the `Woow_ubuntu_version_control`
+  repo.
 
-No secrets live in this git repo. `.env` is git-ignored; `.env.example`
-is the template.
+No secrets live in this git repo. `.env` is git-ignored; `.env.example` is the
+template.
 
 ## Ports
 
@@ -141,13 +142,14 @@ podman exec -it od-console sh -c 'wget -qO- http://host.containers.internal:7001
 
 ## Related repos
 
-- [`Woow_ubuntu_version_control`](https://github.com/WOOWTECH/Woow_ubuntu_version_control) — the umbrella recipe that pins this branch as a submodule.
-- [`Woow_hermes_agent_docker_compose_all`](https://github.com/WOOWTECH/Woow_hermes_agent_docker_compose_all) — sibling `podman` branch (Hermes).
-- [`Woow_vibekanban_docker_compose_all`](https://github.com/WOOWTECH/Woow_vibekanban_docker_compose_all) — sibling `podman-ubuntu` branch (VK).
+- [`Woow_k3s_opendesign`](https://github.com/WOOWTECH/Woow_k3s_opendesign) — Kubernetes / K3s Helm chart for the same daemon (with `od-console` + `od-mcp`).
+- [`Woow_ubuntu_version_control`](https://github.com/WOOWTECH/Woow_ubuntu_version_control) — the umbrella recipe that pins this repo as a submodule.
+- [`Woow_podman_hermes`](https://github.com/WOOWTECH/Woow_podman_hermes) — sibling podman deployment (Hermes).
+- [`Woow_podman_vibekanban`](https://github.com/WOOWTECH/Woow_podman_vibekanban) — sibling podman deployment (VK).
 
-## Non-goals of this branch
+## Non-goals of this repo
 
-- Kubernetes / K3S manifests (they live on `main`).
+- Kubernetes / K3s manifests — see [`Woow_k3s_opendesign`](https://github.com/WOOWTECH/Woow_k3s_opendesign).
 - Cloudflare Tunnel setup (per-machine operator task).
 - Container-side shells (`ttyd`, in-container `sshd`).
 - Windows / macOS host support.

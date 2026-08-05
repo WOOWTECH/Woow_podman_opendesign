@@ -1,15 +1,16 @@
-# Woow Open-Design — `podman` 分支
+# Woow_podman_opendesign — Open-Design（host + podman 混合部署）
 
-> **你正在 `podman` 分支上。** 這是一個 **host + podman 混合部署**：
->
-> - **`od-runner`**（Playwright/Chromium + Python renderer）以 `systemd --user`
->   服務的形式**跑在 Ubuntu 主機上**。
-> - **`od-console`**（Web GUI）以 **rootless podman container** 跑在
->   `:4000`。
-> - **沒有 ttyd。** 進入 container 一律走 host OpenSSH + `podman exec`。
->
-> 找 Kubernetes / K3S 版本？請看 [`main`](../../tree/main) 或
-> [`k3s`](../../tree/k3s) 分支。
+[English](README.md)
+
+Ubuntu 主機的 Podman / systemd 部署。這是 **host + podman 混合架構**：
+
+- **`od-runner`**（Playwright/Chromium + Python renderer）以 `systemd --user`
+  服務的形式**跑在 Ubuntu 主機上**。
+- **`od-console`**（Web GUI）以 **rootless podman container** 跑在 `:4000`。
+- **沒有 ttyd。** 進入 container 一律走 host OpenSSH + `podman exec`。
+
+> **找其他平台？**
+> K3s / Kubernetes（已改為 Helm chart）→ [Woow_k3s_opendesign](https://github.com/WOOWTECH/Woow_k3s_opendesign)
 
 ---
 
@@ -30,10 +31,9 @@ Host 同時也是**唯一**的存取平面：操作者 SSH 進來後，用 `syst
 # 1) SSH 進目標主機
 ssh user@your-n100-host
 
-# 2) Clone 這個分支
-git clone -b podman \
-  https://github.com/WOOWTECH/Woow_opendesign_docker_compose_all.git
-cd Woow_opendesign_docker_compose_all
+# 2) Clone 這個 repo
+git clone https://github.com/WOOWTECH/Woow_podman_opendesign.git
+cd Woow_podman_opendesign
 
 # 3) 安裝 host 端（apt + nvm + Playwright + Python venv + systemd --user）
 #    此腳本 idempotent，重複執行安全。
@@ -130,13 +130,14 @@ podman exec -it od-console sh -c 'wget -qO- http://host.containers.internal:7001
 
 ## 相關 repo
 
-- [`Woow_ubuntu_version_control`](https://github.com/WOOWTECH/Woow_ubuntu_version_control) — 上層 recipe，以 submodule 釘住此分支。
-- [`Woow_hermes_agent_docker_compose_all`](https://github.com/WOOWTECH/Woow_hermes_agent_docker_compose_all) — 姊妹 `podman` 分支（Hermes）。
-- [`Woow_vibekanban_docker_compose_all`](https://github.com/WOOWTECH/Woow_vibekanban_docker_compose_all) — 姊妹 `podman-ubuntu` 分支（VK）。
+- [`Woow_k3s_opendesign`](https://github.com/WOOWTECH/Woow_k3s_opendesign) — 同一支 daemon 的 Kubernetes / K3s Helm chart（含 `od-console` + `od-mcp`）。
+- [`Woow_ubuntu_version_control`](https://github.com/WOOWTECH/Woow_ubuntu_version_control) — 上層 recipe，以 submodule 釘住本 repo。
+- [`Woow_podman_hermes`](https://github.com/WOOWTECH/Woow_podman_hermes) — 姊妹 podman 部署（Hermes）。
+- [`Woow_podman_vibekanban`](https://github.com/WOOWTECH/Woow_podman_vibekanban) — 姊妹 podman 部署（VK）。
 
-## 本分支非目標
+## 本 repo 非目標
 
-- Kubernetes / K3S manifests（在 `main` 分支）。
+- Kubernetes / K3s manifests — 請見 [`Woow_k3s_opendesign`](https://github.com/WOOWTECH/Woow_k3s_opendesign)。
 - Cloudflare Tunnel 實際佈建（每台機器由操作者處理）。
 - Container 內 shell（`ttyd`、container 內 `sshd`）。
 - Windows / macOS 主機。
