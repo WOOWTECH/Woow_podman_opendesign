@@ -1,158 +1,202 @@
-# Woow_podman_opendesign — Open-Design (hybrid host + podman)
+# Woow Podman Open Design
 
-[繁體中文](README_zh-TW.md)
+[![Podman](https://img.shields.io/badge/Podman-%E2%89%A54.4%20rootless-892CA0)](https://podman.io)
+[![OD](https://img.shields.io/badge/upstream-ghcr.io%2Fnexu--io%2Fod-blue)](https://github.com/nexu-io/od)
+[![pi-agent](https://img.shields.io/badge/pi--coding--agent-0.83.0-blue)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Podman / systemd deployment of **Woow Open-Design** for Ubuntu hosts. This is a
-**hybrid host + podman deployment**:
+**English** · [繁體中文](README_zh-TW.md)
 
-- **`od-runner`** (Playwright/Chromium + Python renderer) runs on the Ubuntu
-  host as a `systemd --user` service.
-- **`od-console`** (web GUI) runs in a **rootless podman container** on port
-  `:4000`.
-- **No `ttyd`.** Container access is via host OpenSSH + `podman exec`.
+Upstream Open Design (`ghcr.io/nexu-io/od`) with a headless media pipeline
+(Chromium + Playwright + CJK fonts) and the Pi coding agent (0.83.0) baked
+in, packaged to run on **rootless Podman** with an **nginx sidecar** in
+front for gzip + cache + WebSocket/SSE passthrough.
 
-> **Looking for another platform?**
-> K3s / Kubernetes (now a Helm chart) → [Woow_k3s_opendesign](https://github.com/WOOWTECH/Woow_k3s_opendesign)
-
----
-
-## Why hybrid?
-
-Playwright + Chromium want direct GPU and filesystem access, and the Python
-renderer wants host system libraries. Both perform noticeably better and are
-simpler when they run on the host. The web console, on the other hand, is
-stateless and benefits from clean container lifecycle management — so it stays
-in podman.
-
-The host is also the sole access plane: the operator SSHs into the box and
-uses `systemctl --user` for host services and `podman exec` for the console
-container. This lets us remove the `ttyd` container that the Kubernetes flavor
-ships.
+Sibling to [`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package) — both stacks share the same
+`pi-agent-data` volume so a session started in the Pi web UI is visible
+inside Open Design's Pi runtime, and vice versa.
 
 ---
 
-## Quick start (Ubuntu 24.04)
+## What you get
+
+| | |
+|---|---|
+| **UI** | `http://<host>:7456` — served by the nginx sidecar (gzip + `immutable` cache on `/_next/static/`, `/static/`, plugin assets) |
+| **Daemon** | Upstream `ghcr.io/nexu-io/od` on `127.0.0.1:7457` (loopback only; nginx is the only public entry) |
+| **Pi runtime** | `@earendil-works/pi-coding-agent@0.83.0` on `PATH` inside the container, with `pi-od` wrapper scoping HOME to `/data/pi-agent/home` so state is shared with the sibling `Woow_podman_pi_agent_package` deployment |
+| **Media pipeline** | Alpine's Chromium + Playwright + Noto CJK/emoji fonts, wired so OD's `/api/export/*` routes actually render PDF/PPTX/Image instead of returning 501 |
+| **Rootless** | `userns_mode: keep-id:uid=1001,gid=1001` — the container's `open-design` user maps to your host uid, so bind-mounted `~/.claude`, `~/.claude.json`, `~/.local/bin` land back on the host owned by you |
+| **Read-only rootfs** | Base image's `/` is immutable; writable paths are the tmpfs `/tmp` + `/home/open-design`, plus two named volumes |
+
+---
+
+## Prerequisites
+
+- **Podman ≥ 4.4** with `podman-compose` 1.0.6+
+- Rootless user account, `loginctl enable-linger $(whoami)` recommended so the stack survives logout
+- **Same-host `pi-agent-data` volume** for the Pi runtime integration to be useful (install [`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package) first, or `install.sh` will create an empty one)
+- Host glibc at `/lib/x86_64-linux-gnu` and `/lib64` — the image bind-mounts these so binaries that Alpine's musl + gcompat cannot fully cover still run. On arm64 replace with `/lib/aarch64-linux-gnu`.
+
+---
+
+## Install
 
 ```bash
-# 1) SSH into the target host
-ssh user@your-n100-host
-
-# 2) Clone this repo
 git clone https://github.com/WOOWTECH/Woow_podman_opendesign.git
 cd Woow_podman_opendesign
 
-# 3) Install the host-side runner (apt + nvm + Playwright + Python venv +
-#    systemd --user unit).  Idempotent; safe to re-run.
-./host-install/install.sh
-
-# 4) Fill in real config
-$EDITOR ~/.config/od/config.json
-
-# 5) Start the host runner
-systemctl --user start od
-systemctl --user status od
-
-# 6) Bring up the podman-side console
-cd podman-stack
+# Copy env template; edit before starting for real
 cp .env.example .env
-$EDITOR .env
-podman-compose up -d
 
-# 7) Open the console
-xdg-open "http://$(hostname -I | awk '{print $1}'):4000"
+# Fill in OPEN_DESIGN_ALLOWED_ORIGINS with every hostname the UI will be
+# opened from. Missing origins fail with HTTP 403 from OD's origin guard
+# and the UI renders but every data route breaks — see the CORS note
+# below.
+$EDITOR .env
+
+# Build the image and bring the stack up
+./scripts/install.sh
 ```
 
-That's it. Total install time on a fresh N100 is ~5 minutes.
+First boot pulls the upstream OD image (`ghcr.io/nexu-io/od:latest`, ~1.2 GB)
+and adds a ~1 GB layer for Chromium + Playwright + fonts. The resulting local
+image is `~2.3 GB`. Subsequent starts reuse the cached layer.
+
+### Uninstall
+
+```bash
+./scripts/uninstall.sh           # stops the stack, keeps open_design_data
+./scripts/uninstall.sh --purge   # also deletes open_design_data
+```
+
+`pi-agent-data` is **external** — this script never touches it, since it is
+shared with the sibling pi-web deployment.
+
+---
+
+## The CORS rule that catches everyone
+
+OD's origin-validation middleware rejects any browser origin that is not
+explicitly listed in `OD_ALLOWED_ORIGINS`. The failure mode is
+distinctive: the UI HTML loads, and then every data route returns
+
+```
+HTTP 403 {"error":"Cross-origin requests are not allowed"}
+```
+
+In compose the variable is spelled `OPEN_DESIGN_ALLOWED_ORIGINS` (mapped
+to the container's `OD_ALLOWED_ORIGINS` automatically). Fill it with **every
+scheme + host + port** combination a user might reach the UI from — LAN IP,
+tailnet IP, tailnet MagicDNS name, Cloudflare Tunnel hostname, dev
+`127.0.0.1`. After editing, recreate the container:
+
+```bash
+podman rm -f open-design && podman-compose -f docker-compose.podman.yml up -d
+```
+
+`.env` reload does **not** take effect on a running container.
+
+---
+
+## The nginx sidecar
+
+Nginx is here for four things, in order of importance:
+
+1. **Gzip** — OD's Express serves ~9 MB of JS/CSS uncompressed on cold load;
+   gzip drops it to ~2 MB. Single biggest UX win.
+2. **`immutable` cache** on hashed paths (`/_next/static/`, `/static/`,
+   `/agent-icons/`, `/api/plugins/*/asset/`). OD sets `Cache-Control:
+   max-age=0` on these, which forces browsers to re-validate 20+ chunks
+   per page load. Overriding with `max-age=31536000, immutable` collapses
+   that to zero requests after the first.
+3. **`Host: $http_host` preservation** — OD's origin check rejects a Host
+   that has been port-stripped. Using nginx's `$host` (the default
+   suggested in many recipes) drops the port and the daemon then answers
+   403 on every guarded route. See [nginx.conf](nginx.conf) line 78.
+4. **WebSocket + SSE passthrough** — Next.js HMR, chat streams, MCP over
+   SSE, `/api/agents?stream=1`, `/api/memory/events`, `/api/integrations/vela/*`.
+   Buffering is off for the whole `/api/` tree; enumerating individual SSE
+   endpoints is a footgun.
+
+The daemon itself binds only to `127.0.0.1:7457`. Publishing it directly
+would remove the sidecar's ability to enforce any of the above; the layout
+assumes browsers only ever talk to `:7456`.
+
+---
+
+## Pi runtime integration
+
+The image bakes `@earendil-works/pi-coding-agent@0.83.0` at
+`/usr/local/bin/pi`. A shell wrapper at `/usr/local/bin/pi-od`:
+
+```sh
+export HOME="${PI_AGENT_DATA_DIR}/home"
+export PI_CODING_AGENT_DIR="${PI_AGENT_DATA_DIR}"
+exec /usr/local/bin/pi "$@"
+```
+
+is what the OD daemon spawns via `PI_BIN=/usr/local/bin/pi-od`. Scoping
+`HOME` only inside Pi (not on the OD daemon itself) is deliberate: OD's
+other runtime adapters (Claude Code, Codex, …) keep their existing
+`HOME=/home/open-design` and their bind-mounted `~/.claude` /
+`~/.claude.json` state. Pi lands on the shared volume, everything else
+does not.
+
+Session state lives in the external `pi-agent-data` volume shared with
+[`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package).
+A session started in the Pi web UI shows up here and vice versa.
+
+If Pi returns `{"kind":"agent_spawn_failed","detail":"No API key found…"}`,
+fill one of `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in
+`.env` (**and recreate the container**), or run
+`podman exec -it open-design pi-od /login` for a Claude Pro / Max / OAuth
+subscription flow — the token lives on `pi-agent-data`.
 
 ---
 
 ## Layout
 
 ```
-.
-├── host-install/           # Host-side (systemd --user)
-│   ├── install.sh              # apt + nvm + Node 22 + Playwright + venv
-│   ├── od.service              # systemd --user unit for od-runner
-│   └── README.md
-├── podman-stack/           # Podman-side (rootless podman-compose)
-│   ├── compose.yml             # od-console service, port :4000
-│   ├── Dockerfile.console      # image for od-console
-│   └── .env.example
-├── console/                # Web GUI source (built into od-console image)
-├── headless-entry.mjs      # OD runner entrypoint (Node) — runs on host
-├── headless-renderer.py    # OD Python renderer — runs on host
-└── docs/                   # design docs
+Dockerfile.full              upstream OD + libc6-compat + Chromium + Playwright + Pi CLI
+docker-compose.podman.yml    the two-service stack (daemon + nginx), host network mode
+nginx.conf                   gzip, immutable cache, Host+Origin preservation, SSE passthrough
+pi-od                        HOME/PI_CODING_AGENT_DIR wrapper that scopes state to the shared volume
+.env.example                 sample environment; copy to .env and edit
+scripts/install.sh           build image, up -d, wait for healthy
+scripts/uninstall.sh         down; --purge removes open_design_data
+docs/plans/                  design notes for the changes that shaped this deployment
 ```
 
-## Access plane
+---
 
-There is exactly **one** way in: the host `ssh.service`. Once inside:
+## Security posture
 
-| Task                             | Command                                    |
-|----------------------------------|--------------------------------------------|
-| Host service status              | `systemctl --user status od`               |
-| Host service logs                | `journalctl --user -u od -f`               |
-| Restart host runner              | `systemctl --user restart od`              |
-| Podman stack status              | `cd podman-stack && podman-compose ps`     |
-| Container logs                   | `podman logs -f od-console`                |
-| Shell into container             | `podman exec -it od-console sh`            |
-| Stop everything                  | `systemctl --user stop od` + `podman-compose down` |
+- **Read-only rootfs** on the daemon container. Writable paths are `/tmp`
+  (tmpfs), `/home/open-design` (tmpfs), and the two named volumes.
+- **`no-new-privileges`** + rootless — the daemon runs as an unprivileged
+  host user.
+- **`OD_API_TOKEN`** is a shared secret; only enforced when
+  `OPEN_DESIGN_DISABLE_API_AUTH` is unset or 0. In deployments where the
+  UI is reachable only through an authenticating reverse proxy (nginx
+  Basic auth, CF Access, etc.), leaving auth off is a reasonable choice
+  and matches the reference `.197` deployment. **Do not disable auth on
+  a stack that is directly reachable from the internet or an untrusted
+  LAN.**
+- **`/api/models-config`** returns configured provider keys unredacted
+  once you get past the origin guard + auth (if any). The trust boundary
+  is whatever is in front of `:7456`; the daemon itself does not redact.
 
-No `ttyd`, no in-container SSH daemon, no exposed shells.
+---
 
-## Config
+## Documentation
 
-All config lives on the host under `~/.config/` — the containers only consume
-it read-only:
+- [Design notes](docs/plans/) — dated implementation plans for the changes
+  that shaped this stack (Pi runtime migration, OpenCode retirement, etc.)
+- [Upstream Open Design](https://github.com/nexu-io/od)
+- [Sibling: Woow_podman_pi_agent_package](https://github.com/WOOWTECH/Woow_podman_pi_agent_package)
+- [繁體中文說明](README_zh-TW.md)
 
-- **OD's own config**: `~/.config/od/config.json` (mode `0600`). Created as a
-  stub by `install.sh`. Bind-mounted read-only into `od-console` at
-  `/config/od`.
-- **Opencode / Claude Code auth** (shared with vk-host + openchamber, per the
-  host-migration design doc): `~/.config/opencode/config.json`,
-  `~/.local/share/opencode/auth.json` (mode `0600`), `~/.claude/`. These are
-  populated by the sibling installers in the `Woow_ubuntu_version_control`
-  repo.
+## License
 
-No secrets live in this git repo. `.env` is git-ignored; `.env.example` is the
-template.
-
-## Ports
-
-| Port  | Service     | Where       |
-|-------|-------------|-------------|
-| 4000  | od-console  | podman      |
-| 7001  | od-runner control (loopback only, by default) | host |
-
-## Troubleshooting
-
-```bash
-# Host runner not starting?
-journalctl --user -u od -f
-systemctl --user status od
-
-# Console container not starting?
-podman logs -f od-console
-cd podman-stack && podman-compose config    # validate compose file
-
-# Console can't reach host runner?
-# From the container:
-podman exec -it od-console sh -c 'wget -qO- http://host.containers.internal:7001/healthz'
-```
-
-## Related repos
-
-- [`Woow_k3s_opendesign`](https://github.com/WOOWTECH/Woow_k3s_opendesign) — Kubernetes / K3s Helm chart for the same daemon (with `od-console` + `od-mcp`).
-- [`Woow_ubuntu_version_control`](https://github.com/WOOWTECH/Woow_ubuntu_version_control) — the umbrella recipe that pins this repo as a submodule.
-- [`Woow_podman_hermes`](https://github.com/WOOWTECH/Woow_podman_hermes) — sibling podman deployment (Hermes).
-- [`Woow_podman_vibekanban`](https://github.com/WOOWTECH/Woow_podman_vibekanban) — sibling podman deployment (VK).
-
-## Non-goals of this repo
-
-- Kubernetes / K3s manifests — see [`Woow_k3s_opendesign`](https://github.com/WOOWTECH/Woow_k3s_opendesign).
-- Cloudflare Tunnel setup (per-machine operator task).
-- Container-side shells (`ttyd`, in-container `sshd`).
-- Windows / macOS host support.
-
-See `docs/plans/2026-07-25-hermes-vk-od-host-migration-design.md` in the
-`Woow_ubuntu_version_control` repo for the full design rationale.
+MIT

@@ -1,0 +1,50 @@
+# Enhanced local image:
+#   - libc6-compat / gcompat (so host-mounted glibc CLIs run on Alpine musl)
+#   - Alpine's system Chromium + CJK/emoji fonts (for headless PDF/PPTX/Image export)
+#   - Playwright npm module wired to the system chromium binary
+# This lets OD's export routes actually render, instead of returning HTTP 501.
+#
+# Result image is ~1.6 GB (base 1.2 + chromium + fonts + node modules).
+#
+# Build:
+#   podman build -t open-design-full -f deploy/Dockerfile.full ..
+FROM ghcr.io/nexu-io/od:latest
+
+USER root
+
+# --- glibc compat + Chromium + fonts + tini --------------------------------
+RUN apk add --no-cache \
+      libc6-compat gcompat \
+      chromium chromium-swiftshader \
+      nss freetype freetype-dev harfbuzz ca-certificates ttf-freefont \
+      font-noto font-noto-cjk font-noto-emoji \
+      fontconfig \
+      dbus dbus-x11 mesa-gbm \
+      wget curl \
+ && fc-cache -fv
+
+# --- Playwright (wired to system chromium; no browser download) ------------
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/usr/lib/chromium \
+    CHROMIUM_PATH=/usr/bin/chromium-browser \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    NODE_OPTIONS="--max-old-space-size=1024"
+
+RUN npm install -g playwright@1.55.1 --no-fund --no-audit \
+ && chown -R open-design:open-design /root 2>/dev/null || true
+
+# --- Pi coding agent ---------------------------------------------------------
+# Open Design has a native Pi JSON-RPC runtime, but its upstream image does not
+# ship the `pi` executable. Keep this version aligned with the separately
+# deployed pi-web image so both entry points share one on-disk data format.
+ARG PI_CODING_AGENT_VERSION=0.83.0
+RUN npm install -g --omit=dev --no-fund --no-audit \
+      "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \
+ && test "$(pi --version)" = "${PI_CODING_AGENT_VERSION}"
+
+# Give only Pi subprocesses the shared Pi HOME. Setting HOME on the Open Design
+# daemon itself would move Claude and other runtime state to the wrong place.
+COPY --chmod=0755 deploy/pi-od /usr/local/bin/pi-od
+RUN test -x /usr/local/bin/pi-od
+
+USER open-design
