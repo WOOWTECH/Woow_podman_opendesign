@@ -2,14 +2,14 @@
 
 [![Podman](https://img.shields.io/badge/Podman-%E2%89%A54.4%20rootless-892CA0)](https://podman.io)
 [![OD](https://img.shields.io/badge/upstream-ghcr.io%2Fnexu--io%2Fod-blue)](https://github.com/nexu-io/od)
-[![pi-agent](https://img.shields.io/badge/pi--coding--agent-0.83.0-blue)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
+[![OpenCode](https://img.shields.io/badge/opencode--ai-1.18.29-blue)](https://www.npmjs.com/package/opencode-ai)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [English](README.md) · **繁體中文**
 
 上游 Open Design（`ghcr.io/nexu-io/od`）加上 headless 媒體工具鏈（Chromium + Playwright + CJK 字型）與 Pi coding agent（0.83.0），封裝成在 **rootless Podman** 上運行，前面掛 **nginx sidecar** 做 gzip、cache、WebSocket/SSE passthrough。
 
-跟 [`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package) 是同族——兩套共用 `pi-agent-data` volume，Pi web UI 開的 session 在這裡看得到，反之亦然。
+**獨立運行**：不跟任何其他部署共用 volume、憑證或 agent 執行檔，也不從主機檔案系統掛任何東西進來。這跟 Home Assistant add-on 與 k3s chart 是同一個形狀，三者釘同一顆上游 digest。
 
 ---
 
@@ -19,7 +19,7 @@
 |---|---|
 | **UI** | `http://<host>:7456` — 由 nginx sidecar 服務（`/_next/static/`、`/static/`、plugin assets 有 `immutable` cache）|
 | **Daemon** | 上游 `ghcr.io/nexu-io/od` 在 `127.0.0.1:7457`（loopback 限定；只有 nginx 對外）|
-| **Pi runtime** | 容器內 PATH 上有 `@earendil-works/pi-coding-agent@0.83.0`，`pi-od` wrapper 把 HOME 指到 `/data/pi-agent/home` 跟 pi-web 部署共用狀態 |
+| **Coding agent** | `opencode-ai@1.18.29` 內建在映像的 `/opt/woow-opendesign/opencode`，已在 PATH 上。BYOK 憑證存在 `$HOME` = `/app/.od/home`（在資料卷內），重啟不會掉 |
 | **媒體工具鏈** | Alpine 的 Chromium + Playwright + Noto CJK/emoji 字型，讓 OD 的 `/api/export/*` 真的能出 PDF/PPTX/Image，不再回 501 |
 | **Rootless** | `userns_mode: keep-id:uid=1001,gid=1001`——容器內的 `open-design` user 對應到你主機的 uid，bind-mount 的 `~/.claude`、`~/.claude.json`、`~/.local/bin` 寫回主機都是你的權限 |
 | **Read-only rootfs** | 基底映像的 `/` 不可寫；可寫路徑只有 tmpfs `/tmp` + `/home/open-design` + 兩個 named volume |
@@ -30,7 +30,7 @@
 
 - **Podman ≥ 4.4** + `podman-compose` 1.0.6+
 - Rootless 帳號、建議 `loginctl enable-linger $(whoami)` 讓 stack 登出後仍活著
-- **同機 `pi-agent-data` volume** 才吃得到 Pi runtime 整合（先裝 [`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package)，或 `install.sh` 會建一個空的）
+- 容器約需 2 GB 記憶體。Chromium 在舊的 384 MB 上限下根本起不來，所以 `OPEN_DESIGN_MEM_LIMIT` 預設已改為 `2g`。不再需要任何同族部署、主機 glibc 掛載或主機 agent CLI。
 - 主機的 glibc 要在 `/lib/x86_64-linux-gnu` 和 `/lib64`——映像 bind-mount 這兩個，讓 Alpine musl + gcompat 蓋不到的 binary 也能跑。arm64 的話改成 `/lib/aarch64-linux-gnu`。
 
 ---
@@ -62,7 +62,7 @@ $EDITOR .env
 ./scripts/uninstall.sh --purge   # 連 open_design_data 也刪
 ```
 
-`pi-agent-data` 是 **external**——這個 script 不會碰，因為它跟 pi-web 部署共用。
+`--purge` 會同時刪掉專案**與** `$HOME` 裡的 OpenCode 憑證，兩者都在 `open_design_data` 內。已經沒有第二個 volume 了。
 
 ---
 
@@ -97,21 +97,22 @@ Daemon 只 bind `127.0.0.1:7457`。直接發佈 daemon 會讓 sidecar 這四件�
 
 ---
 
-## Pi runtime 整合
+## Coding agent
 
-映像內建 `@earendil-works/pi-coding-agent@0.83.0` 在 `/usr/local/bin/pi`。另有一個 shell wrapper `/usr/local/bin/pi-od`：
+`opencode-ai@1.18.29` 裝在映像的 `/opt/woow-opendesign/opencode` 並放上 PATH。不從主機 spawn 任何東西，也沒有 wrapper 去框它的 `HOME`：整個 daemon 都跑在 `HOME=/app/.od/home`（資料卷內），所以 OpenCode 的 BYOK 憑證與 session 狀態 `podman restart` 後還在。
 
-```sh
-export HOME="${PI_AGENT_DATA_DIR}/home"
-export PI_CODING_AGENT_DIR="${PI_AGENT_DATA_DIR}"
-exec /usr/local/bin/pi "$@"
+`HOME` 搬家就是為了這件事。它原本是 `/home/open-design`，而這個 stack 把那裡掛成 **tmpfs**——等於每次重啟都把使用者從自己的 agent 登出。
+
+確認它活著：
+
+```bash
+curl -s http://127.0.0.1:7456/api/agents \
+  | python3 -c 'import json,sys; [print(a["id"], a["available"]) for a in json.load(sys.stdin)["agents"] if a["available"]]'
+# opencode True
+# byok-opencode True
 ```
 
-OD daemon 透過 `PI_BIN=/usr/local/bin/pi-od` 呼叫它。**只在 Pi subprocess 範圍內覆蓋 HOME**、不動 OD daemon 本身的 HOME 是刻意的：OD 其他 runtime adapter（Claude Code、Codex…）還保持 `HOME=/home/open-design` 與 bind-mount 的 `~/.claude` / `~/.claude.json`。Pi 落在共用 volume、其他不動。
-
-Session state 存在 external volume `pi-agent-data`，跟 [`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package) 共用。Pi web UI 開的 session 這邊看得到、反之亦然。
-
-Pi 回 `{"kind":"agent_spawn_failed","detail":"No API key found…"}` 的話，`.env` 填一個 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`（**要 recreate container**），或 `podman exec -it open-design pi-od /login` 走 Claude Pro / Max OAuth 訂閱流程——token 存在 `pi-agent-data`。
+跑起來若回 `No API key found`，在 `.env` 填一個 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 後 recreate container，或直接從 UI 的 Models 頁面加——會寫進 `$HOME` 並持久化。
 
 ---
 
@@ -121,7 +122,8 @@ Pi 回 `{"kind":"agent_spawn_failed","detail":"No API key found…"}` 的話，`
 Dockerfile.full              上游 OD + libc6-compat + Chromium + Playwright + Pi CLI
 docker-compose.podman.yml    2 個 service（daemon + nginx）、host network mode
 nginx.conf                   gzip、immutable cache、Host+Origin 保留、SSE passthrough
-pi-od                        HOME/PI_CODING_AGENT_DIR wrapper 把狀態指到共用 volume
+runtime/                     鎖定 playwright-core 與 opencode-ai 的 lockfile
+rootfs/                      headless-entry.mjs + headless-renderer.mjs + 啟動器
 .env.example                 環境樣板，複製成 .env 再編輯
 scripts/install.sh           build image、up -d、等 healthy
 scripts/uninstall.sh         down；--purge 會刪 open_design_data
@@ -141,7 +143,7 @@ docs/plans/                  塑造這個部署的設計筆記
 
 ## 文件
 
-- [設計筆記](docs/plans/) — 塑造本 stack 每次變更的實作 plan（Pi runtime 遷移、OpenCode 退場等）
+- [設計筆記](docs/plans/) — 塑造本 stack 每次變更的實作 plan
 - [上游 Open Design](https://github.com/nexu-io/od)
 - [同族: Woow_podman_pi_agent_package](https://github.com/WOOWTECH/Woow_podman_pi_agent_package)
 - [English README](README.md)

@@ -4,9 +4,10 @@
 # Prerequisites on the host:
 #   - Podman >= 4.4, podman-compose 1.0.6+
 #   - Rootless user with subuids and linger enabled (loginctl enable-linger)
-#   - A same-host `pi-agent-data` volume (from Woow_podman_pi_agent_package)
-#     if you want the pi-od integration; otherwise the daemon still runs
-#     but the /api/pi routes fail at spawn time.
+#
+# No sibling deployment is required. The coding agent (OpenCode) and the
+# headless export browser are both baked into the image, which is the whole
+# point of the alignment with the Home Assistant add-on.
 #
 # Usage:
 #   ./scripts/install.sh                    # build image, up -d
@@ -31,21 +32,11 @@ if [ ! -f .env ]; then
     warn "Otherwise pi-web's origin guard returns 403 and the UI renders but does nothing."
 fi
 
-# pi-agent-data volume — external, from the sibling pi-web package. Create an
-# empty one if it does not exist so podman-compose does not refuse to start.
-if ! podman volume exists pi-agent-data 2>/dev/null; then
-    warn "External volume pi-agent-data missing — creating an empty one."
-    warn "The pi-od integration works better when this is the same volume as"
-    warn "the Woow_podman_pi_agent_package deployment's pi-agent-data."
-    podman volume create pi-agent-data >/dev/null
-fi
-
 if [ "${OD_SKIP_BUILD:-0}" != "1" ]; then
     IMAGE_TAG="$(grep '^OPEN_DESIGN_IMAGE=' .env | cut -d= -f2)"
     IMAGE_TAG="${IMAGE_TAG:-open-design-full}"
     say "Building image ${IMAGE_TAG} from Dockerfile.full"
-    # Build context is the repo root — Dockerfile.full COPYs deploy/pi-od,
-    # which lives at the repo root here.
+    # Build context is the repo root: Dockerfile.full COPYs runtime/ and rootfs/.
     podman build --format=docker -t "${IMAGE_TAG}:latest" -f Dockerfile.full .
 fi
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Take the OD stack down. The named volume open_design_data is KEPT by
-# default (it holds sessions, models config, uploaded assets); pass --purge
-# to delete it. pi-agent-data is EXTERNAL — never removed by this script.
+# default (it holds projects, app.sqlite, and $HOME with OpenCode's saved
+# credentials); pass --purge to delete it.
 #
 #   ./scripts/uninstall.sh            keep open_design_data, keep the image
 #   ./scripts/uninstall.sh --purge    also delete open_design_data
@@ -20,8 +20,8 @@ podman-compose -f docker-compose.podman.yml down 2>&1 | tail -5 || true
 
 if [ "${PURGE}" = "--purge" ]; then
     say "Deleting open_design_data (--purge given)"
+    warn "This deletes every project AND the OpenCode credentials in \$HOME."
     podman volume rm -f open-design_open_design_data 2>/dev/null || true
-    warn "pi-agent-data was NOT touched — it is shared with pi-web and other consumers."
 else
     say "Keeping open_design_data — remove with: podman volume rm open-design_open_design_data"
 fi

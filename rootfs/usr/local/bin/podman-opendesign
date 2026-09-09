@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Container entrypoint for the OpenDesign stack under rootless podman.
+#
+# Deliberately NOT a copy of the k3s launcher. That one starts as root to hand a
+# freshly provisioned Longhorn RWO volume (mounted root:root) to UID 1001 with
+# su-exec. Here `userns_mode: keep-id:uid=1001,gid=1001` already maps container
+# 1001 to the invoking host user, so the named volume arrives owned correctly
+# and there is no root in the user namespace to drop from. Attempting the chown
+# dance would fail, not merely be redundant.
+#
+# One process: tini is PID 1, this script execs node, so podman's SIGTERM lands
+# on the Node process and headless-entry.mjs runs the graceful shutdown.
+
+# /app/.od, not the k3s /data/opendesign. The deployed named volume
+# (open_design_data) is already mounted here and holds the existing projects;
+# repointing OD_DATA_DIR would strand them in a volume the daemon stops reading.
+readonly DATA_DIR=/app/.od
+
+if [[ -n "${OD_DATA_DIR:-}" && "${OD_DATA_DIR}" != "$DATA_DIR" ]]; then
+  echo "[woow-opendesign] OD_DATA_DIR=${OD_DATA_DIR} does not match the image/volume path ${DATA_DIR}" >&2
+  exit 78
+fi
+
+if [[ ! -d "$DATA_DIR" ]]; then
+  echo "[woow-opendesign] ${DATA_DIR} is not mounted" >&2
+  exit 78
+fi
+
+prepare_dir() {
+  local dir=$1
+  if [[ -L "$dir" ]]; then
+    echo "[woow-opendesign] refusing symbolic-link runtime directory: $dir" >&2
+    exit 78
+  fi
+  if [[ -e "$dir" && ! -d "$dir" ]]; then
+    echo "[woow-opendesign] runtime path is not a directory: $dir" >&2
+    exit 78
+  fi
+  mkdir -p -- "$dir"
+}
+
+# HOME lives in the data volume, not the tmpfs /home/open-design this stack used
+# to run with. OpenCode writes its BYOK credentials and session state under
+# $HOME; on a tmpfs every `podman restart` silently signed the user out, which
+# is the opposite of the standalone behaviour this alignment is for.
+for dir in "$DATA_DIR/home" "$DATA_DIR/export-render" "$DATA_DIR/export-pdf"; do
+  prepare_dir "$dir"
+done
+
+# Exported last so nothing in the compose environment can widen the bind.
+# OD_BIND_HOST=127.0.0.1 is the security floor: with host networking the daemon
+# port would otherwise be reachable from the whole LAN unauthenticated. The
+# nginx sidecar on 7456 is its only intended client.
+export OD_DATA_DIR="$DATA_DIR"
+export OD_BIND_HOST=127.0.0.1
+export OD_PORT="${OD_PORT:-7457}"
+export HOME="$DATA_DIR/home"
+
+exec /usr/local/bin/node /opt/woow-opendesign/headless-entry.mjs

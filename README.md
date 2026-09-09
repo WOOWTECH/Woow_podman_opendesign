@@ -2,19 +2,21 @@
 
 [![Podman](https://img.shields.io/badge/Podman-%E2%89%A54.4%20rootless-892CA0)](https://podman.io)
 [![OD](https://img.shields.io/badge/upstream-ghcr.io%2Fnexu--io%2Fod-blue)](https://github.com/nexu-io/od)
-[![pi-agent](https://img.shields.io/badge/pi--coding--agent-0.83.0-blue)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
+[![OpenCode](https://img.shields.io/badge/opencode--ai-1.18.29-blue)](https://www.npmjs.com/package/opencode-ai)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **English** · [繁體中文](README_zh-TW.md)
 
-Upstream Open Design (`ghcr.io/nexu-io/od`) with a headless media pipeline
-(Chromium + Playwright + CJK fonts) and the Pi coding agent (0.83.0) baked
-in, packaged to run on **rootless Podman** with an **nginx sidecar** in
-front for gzip + cache + WebSocket/SSE passthrough.
+Upstream Open Design (`ghcr.io/nexu-io/od`, digest-pinned at 0.21.1) with a
+headless export pipeline (Chromium + Playwright + CJK fonts) and the
+**OpenCode** coding agent baked in, packaged to run on **rootless Podman**
+with an **nginx sidecar** in front for gzip + cache + WebSocket/SSE
+passthrough.
 
-Sibling to [`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package) — both stacks share the same
-`pi-agent-data` volume so a session started in the Pi web UI is visible
-inside Open Design's Pi runtime, and vice versa.
+**Standalone.** It shares no volume, no credentials and no agent binary with
+any other deployment, and mounts nothing from the host filesystem. This is the
+same shape as the Home Assistant add-on and the k3s chart, all three pinned to
+the same upstream digest.
 
 ---
 
@@ -23,11 +25,11 @@ inside Open Design's Pi runtime, and vice versa.
 | | |
 |---|---|
 | **UI** | `http://<host>:7456` — served by the nginx sidecar (gzip + `immutable` cache on `/_next/static/`, `/static/`, plugin assets) |
-| **Daemon** | Upstream `ghcr.io/nexu-io/od` on `127.0.0.1:7457` (loopback only; nginx is the only public entry) |
-| **Pi runtime** | `@earendil-works/pi-coding-agent@0.83.0` on `PATH` inside the container, with `pi-od` wrapper scoping HOME to `/data/pi-agent/home` so state is shared with the sibling `Woow_podman_pi_agent_package` deployment |
-| **Media pipeline** | Alpine's Chromium + Playwright + Noto CJK/emoji fonts, wired so OD's `/api/export/*` routes actually render PDF/PPTX/Image instead of returning 501 |
-| **Rootless** | `userns_mode: keep-id:uid=1001,gid=1001` — the container's `open-design` user maps to your host uid, so bind-mounted `~/.claude`, `~/.claude.json`, `~/.local/bin` land back on the host owned by you |
-| **Read-only rootfs** | Base image's `/` is immutable; writable paths are the tmpfs `/tmp` + `/home/open-design`, plus two named volumes |
+| **Daemon** | `ghcr.io/nexu-io/od:0.21.1` on `127.0.0.1:7457` (loopback only; nginx is the only public entry). Started through `headless-entry.mjs`, which injects the Playwright slide renderer the stock entrypoint has no way to supply |
+| **Coding agent** | `opencode-ai@1.18.29` baked into the image at `/opt/woow-opendesign/opencode`, on `PATH`. Its BYOK credentials live in `$HOME` = `/app/.od/home`, inside the data volume, so they survive a restart |
+| **Export pipeline** | Alpine's Chromium + `playwright-core` 1.55.0 + Noto CJK/emoji fonts. `/api/version` reports `capabilities.slideRenderer: true` and the PPTX / PDF / PNG / JPEG routes return real bytes instead of 501 |
+| **Rootless** | `userns_mode: keep-id:uid=1001,gid=1001` — the container's `open-design` user maps to your host uid, so the named volume is writable with no chown in the entrypoint. Nothing is bind-mounted from your home directory |
+| **Read-only rootfs** | Base image's `/` is immutable; writable paths are the tmpfs `/tmp` + `/home/open-design`, plus the single `open_design_data` volume |
 
 ---
 
@@ -35,8 +37,10 @@ inside Open Design's Pi runtime, and vice versa.
 
 - **Podman ≥ 4.4** with `podman-compose` 1.0.6+
 - Rootless user account, `loginctl enable-linger $(whoami)` recommended so the stack survives logout
-- **Same-host `pi-agent-data` volume** for the Pi runtime integration to be useful (install [`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package) first, or `install.sh` will create an empty one)
-- Host glibc at `/lib/x86_64-linux-gnu` and `/lib64` — the image bind-mounts these so binaries that Alpine's musl + gcompat cannot fully cover still run. On arm64 replace with `/lib/aarch64-linux-gnu`.
+- Roughly 2 GB of RAM for the container. Chromium does not start inside the
+  old 384 MB ceiling, which is why `OPEN_DESIGN_MEM_LIMIT` now defaults to `2g`.
+
+No sibling deployment, host glibc mount or host agent CLI is required any more.
 
 ---
 
@@ -70,8 +74,8 @@ image is `~2.3 GB`. Subsequent starts reuse the cached layer.
 ./scripts/uninstall.sh --purge   # also deletes open_design_data
 ```
 
-`pi-agent-data` is **external** — this script never touches it, since it is
-shared with the sibling pi-web deployment.
+`--purge` deletes the projects **and** the OpenCode credentials in `$HOME`,
+both of which live in `open_design_data`. There is no second volume any more.
 
 ---
 
@@ -125,43 +129,41 @@ assumes browsers only ever talk to `:7456`.
 
 ---
 
-## Pi runtime integration
+## Coding agent
 
-The image bakes `@earendil-works/pi-coding-agent@0.83.0` at
-`/usr/local/bin/pi`. A shell wrapper at `/usr/local/bin/pi-od`:
+`opencode-ai@1.18.29` is installed into the image at
+`/opt/woow-opendesign/opencode` and put on `PATH`. Nothing is spawned from the
+host and no wrapper script scopes its `HOME`: the whole daemon runs with
+`HOME=/app/.od/home`, inside the data volume, so OpenCode's BYOK credentials
+and session state survive `podman restart`.
 
-```sh
-export HOME="${PI_AGENT_DATA_DIR}/home"
-export PI_CODING_AGENT_DIR="${PI_AGENT_DATA_DIR}"
-exec /usr/local/bin/pi "$@"
+That last part is the reason `HOME` moved. It used to be `/home/open-design`,
+which this stack mounts as a **tmpfs** — every restart silently signed the user
+out of their own agent.
+
+Check it is live:
+
+```bash
+curl -s http://127.0.0.1:7456/api/agents \
+  | python3 -c 'import json,sys; [print(a["id"], a["available"]) for a in json.load(sys.stdin)["agents"] if a["available"]]'
+# opencode True
+# byok-opencode True
 ```
 
-is what the OD daemon spawns via `PI_BIN=/usr/local/bin/pi-od`. Scoping
-`HOME` only inside Pi (not on the OD daemon itself) is deliberate: OD's
-other runtime adapters (Claude Code, Codex, …) keep their existing
-`HOME=/home/open-design` and their bind-mounted `~/.claude` /
-`~/.claude.json` state. Pi lands on the shared volume, everything else
-does not.
-
-Session state lives in the external `pi-agent-data` volume shared with
-[`Woow_podman_pi_agent_package`](https://github.com/WOOWTECH/Woow_podman_pi_agent_package).
-A session started in the Pi web UI shows up here and vice versa.
-
-If Pi returns `{"kind":"agent_spawn_failed","detail":"No API key found…"}`,
-fill one of `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in
-`.env` (**and recreate the container**), or run
-`podman exec -it open-design pi-od /login` for a Claude Pro / Max / OAuth
-subscription flow — the token lives on `pi-agent-data`.
+If a run fails with `No API key found`, set one of `DEEPSEEK_API_KEY` /
+`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in `.env` and recreate the container, or
+add the key from the UI's Models page — it is written to `$HOME` and persists.
 
 ---
 
 ## Layout
 
 ```
-Dockerfile.full              upstream OD + libc6-compat + Chromium + Playwright + Pi CLI
+Dockerfile.full              pinned OD 0.21.1 + Chromium + Playwright + OpenCode
 docker-compose.podman.yml    the two-service stack (daemon + nginx), host network mode
 nginx.conf                   gzip, immutable cache, Host+Origin preservation, SSE passthrough
-pi-od                        HOME/PI_CODING_AGENT_DIR wrapper that scopes state to the shared volume
+runtime/                     lockfiles pinning playwright-core and opencode-ai
+rootfs/                      headless-entry.mjs + headless-renderer.mjs + the launcher
 .env.example                 sample environment; copy to .env and edit
 scripts/install.sh           build image, up -d, wait for healthy
 scripts/uninstall.sh         down; --purge removes open_design_data
@@ -192,7 +194,7 @@ docs/plans/                  design notes for the changes that shaped this deplo
 ## Documentation
 
 - [Design notes](docs/plans/) — dated implementation plans for the changes
-  that shaped this stack (Pi runtime migration, OpenCode retirement, etc.)
+  that shaped this stack
 - [Upstream Open Design](https://github.com/nexu-io/od)
 - [Sibling: Woow_podman_pi_agent_package](https://github.com/WOOWTECH/Woow_podman_pi_agent_package)
 - [繁體中文說明](README_zh-TW.md)
