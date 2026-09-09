@@ -1,116 +1,80 @@
-# Merged compose for rootless podman on Linux.
-#
-# Combines the base docker-compose.yml (image, env, healthcheck, security_opt,
-# volumes) with docker-compose.linux.yml (host networking, agent-CLI mounts,
-# glibc-compat), collapsed into a single file because podman-compose 1.0.6
-# does not implement the Compose v2 `!reset` merge tag used by the split
-# base + override pair.
+# Woow OpenDesign for rootless podman, aligned with the Home Assistant add-on.
 #
 # Usage:
-#   cd deploy
 #   podman-compose -f docker-compose.podman.yml up -d
 #
-# Notes on differences vs docker-compose.yml + docker-compose.linux.yml:
-#   1. `ports:` omitted entirely (network_mode: host makes it irrelevant).
-#   2. read_only: true retained from base — daemon rootfs stays immutable.
-#   3. cpus/pids/mem limits merged in one place.
-#   4. Uses OPEN_DESIGN_IMAGE=open-design-local from .env (built locally
-#      via Dockerfile.local to add libc6-compat on Alpine).
+# What "aligned" changed here, and why each thing left:
+#   * pi-agent-data volume + PI_* environment + PI_BIN — gone. The coding agent
+#     is OpenCode, baked into the image. This stack no longer shares state with
+#     the pi-web deployment, which is what let a pi-web change take OpenDesign
+#     down with it.
+#   * ~/.local/bin, ~/.claude, ~/.claude.json and the host /lib mounts — gone.
+#     They existed so the daemon could execute the HOST's agent CLIs through
+#     glibc shims. Standalone means the container carries its own agent; those
+#     mounts were also the stack's largest read path into the host filesystem.
+#   * mem_limit / NODE_OPTIONS defaults raised from 384m / 192MB. Those predate
+#     the export pipeline: Chromium alone does not start in 384m, so every
+#     PDF/PPTX/PNG export would OOM. The .env.example already documented 2g and
+#     1536; the defaults here now agree with it instead of contradicting it.
 
 name: open-design
 
 services:
   open-design:
     container_name: open-design
-    image: ${OPEN_DESIGN_IMAGE:-open-design-local}
+    image: ${OPEN_DESIGN_IMAGE:-open-design-full}
     restart: unless-stopped
     network_mode: host
     # Rootless podman userns mapping: container UID 1001 (open-design) becomes
-    # host UID 1000 (the invoking user), so bind-mounts of ~/.claude etc. are
-    # readable by the daemon and writable session state lands back in host $HOME.
+    # the invoking host UID, so the named volume is writable without any chown
+    # in the entrypoint. The launcher relies on this — see podman-opendesign.
     userns_mode: keep-id:uid=1001,gid=1001
     read_only: true
     security_opt:
       - no-new-privileges:true
-    mem_limit: ${OPEN_DESIGN_MEM_LIMIT:-384m}
-    pids_limit: 256
-    cpus: '1.5'
+    mem_limit: ${OPEN_DESIGN_MEM_LIMIT:-2g}
+    pids_limit: 512
+    cpus: '2.0'
     environment:
       NODE_ENV: production
-      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=192}
-      # Bind on all interfaces so tailnet peers can reach the
-      # daemon. Loopback + LAN also stay reachable. Trust boundary = tailnet.
-      # Bind loopback only — public 7456 is served by the nginx sidecar which
-      # adds gzip + immutable cache for /_next/static. Direct :7457 access from
-      # host stays possible for debugging.
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=1536}
+      # Loopback only. With network_mode: host any other bind would put an
+      # unauthenticated daemon on the LAN; nginx on 7456 is the only client.
       OD_BIND_HOST: 127.0.0.1
-      # Allow the tailnet + loopback origins so browser CORS preflight passes.
-      # Empty means "no CORS enforcement" but some connector routes still
-      # loopback-guard; safest is to list the hosts we plan to serve from.
-      OD_ALLOWED_ORIGINS: ${OPEN_DESIGN_ALLOWED_ORIGINS:-http://127.0.0.1:7456,http://<TAILNET-IP>:7456}
       OD_PORT: ${OPEN_DESIGN_INTERNAL_PORT:-7457}
       OD_WEB_PORT: ${OPEN_DESIGN_INTERNAL_PORT:-7457}
+      # Every browser-facing origin must be listed or OpenDesign's origin guard
+      # returns 403 on every mutating route while the UI still renders.
+      OD_ALLOWED_ORIGINS: ${OPEN_DESIGN_ALLOWED_ORIGINS:-http://127.0.0.1:7456}
       OD_API_TOKEN: ${OD_API_TOKEN:-}
       OD_DISABLE_API_AUTH: ${OPEN_DESIGN_DISABLE_API_AUTH:-}
       OD_CODEX_SANDBOX: ${OD_CODEX_SANDBOX:-}
-      # Open Design's native Pi runtime launches this wrapper with `--mode rpc`.
-      # The wrapper scopes HOME to Pi only, preserving other agents' state paths.
-      PI_BIN: /usr/local/bin/pi-od
-      PI_AGENT_DATA_DIR: /data/pi-agent
-      PI_CODING_AGENT_DIR: /data/pi-agent
-      PI_TELEMETRY: '0'
-      PI_SKIP_VERSION_CHECK: '1'
-      # Prepend host-bin mounts so the daemon finds other host agent CLIs first.
-      PATH: /mnt/host-local-bin:/usr/local/bin:/usr/bin:/bin
-      # Optional BYOK API keys — leave blank to omit.
+      # Optional BYOK keys. Blank is fine — they are settable from the UI.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
+      # Holds projects, app.sqlite AND (new) $HOME for OpenCode's credentials.
       - open_design_data:/app/.od
-      # Pi settings, provider auth, skills, and sessions shared with pi-web.
-      # Read-write is required for session persistence and OAuth token refresh.
-      - pi-agent-data:/data/pi-agent
-      # Host agent CLI mounts (read-only).
-      - ${HOME}/.local/bin:/mnt/host-local-bin:ro
-      # Claude Code native binary at the exact host path so the
-      # ~/.local/bin/claude symlink resolves inside the container.
-      # On this vk-host machine the versioned binary sits under
-      # share-vk-host, not the default share.
-      - ${HOME}/.local/share-vk-host/claude:${HOME}/.local/share-vk-host/claude:ro
-      # Claude Code state — needs read+write because the CLI updates session/
-      # history files each run. With userns_mode: keep-id, files land back in
-      # host $HOME/.claude owned by uid 1000 as if written by your normal shell.
-      - ${HOME}/.claude:/home/open-design/.claude
-      # Claude Code's top-level ~/.claude.json (config + login state) — separate
-      # file, not inside ~/.claude/. Without this the CLI reports "not found"
-      # even when credentials exist.
-      - ${HOME}/.claude.json:/home/open-design/.claude.json
-      # Host glibc for binaries that libc6-compat/gcompat cannot fully cover.
-      # amd64 only — on arm64 use /lib/aarch64-linux-gnu instead.
-      - /lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:ro
-      - /lib64:/lib64:ro
     tmpfs:
       - /tmp
-      # /home/open-design as tmpfs. Rootless podman doesn't accept uid/gid
-      # tmpfs options (Docker-only). mode=1777 lets the container's uid=1001
-      # write into it via the sticky-bit any-user semantics.
+      # Still a tmpfs, but no longer holds anything that must survive: HOME is
+      # /app/.od/home now. Rootless podman rejects Docker's uid/gid tmpfs
+      # options, so mode=1777 is how uid 1001 gets to write here.
       - /home/open-design:mode=1777
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${OPEN_DESIGN_INTERNAL_PORT:-7457}/api/health"]
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:${OPEN_DESIGN_INTERNAL_PORT:-7457}/api/health"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 45s
 
-  # nginx sidecar: gzip + immutable cache + WebSocket/SSE passthrough.
-  # Fixes the two biggest client-side slowdowns:
-  #   1. OD's Express serves ~9 MB of JS/CSS uncompressed → gzip drops it ~75%.
-  #   2. `Cache-Control: max-age=0` forced re-validation of 21 chunks each load
-  #      → we override to `immutable, max-age=1y` for hashed /_next/static.
+  # nginx sidecar: gzip + immutable cache for hashed /_next/static chunks +
+  # WebSocket/SSE passthrough. OD's Express serves ~9 MB of JS/CSS uncompressed
+  # and forces re-validation of every chunk on each load without it.
   nginx:
     container_name: open-design-nginx
-    image: nginx:alpine
+    image: nginx:1.27-alpine
     restart: unless-stopped
     network_mode: host
     security_opt:
@@ -131,5 +95,3 @@ services:
 
 volumes:
   open_design_data:
-  pi-agent-data:
-    external: true

@@ -1,50 +1,98 @@
-# Enhanced local image:
-#   - libc6-compat / gcompat (so host-mounted glibc CLIs run on Alpine musl)
-#   - Alpine's system Chromium + CJK/emoji fonts (for headless PDF/PPTX/Image export)
-#   - Playwright npm module wired to the system chromium binary
-# This lets OD's export routes actually render, instead of returning HTTP 501.
+# Woow OpenDesign for rootless podman.
 #
-# Result image is ~1.6 GB (base 1.2 + chromium + fonts + node modules).
+# Aligned with the Home Assistant add-on and the k3s chart: same pinned upstream
+# base, same OpenCode build, same headless Playwright export pipeline. The point
+# of the alignment is that this stack runs STANDALONE — it no longer borrows a
+# coding agent, credentials or a HOME from the host.
 #
-# Build:
-#   podman build -t open-design-full -f deploy/Dockerfile.full ..
-FROM ghcr.io/nexu-io/od:latest
+# Removed in this rewrite, deliberately:
+#   * Pi (@earendil-works/pi-coding-agent) and the pi-od HOME-scoping wrapper.
+#     Pi was here because the upstream image ships no agent binary and pi-web
+#     was the neighbouring deployment. OpenCode is now baked in instead, so the
+#     shared /data/pi-agent volume and PI_* wiring are gone.
+#   * `FROM ghcr.io/nexu-io/od:latest`. Unpinned, it resolved to 0.20.3 at build
+#     time, whose daemon has no headless renderer at all — which is why every
+#     image/pptx/pdf export on the live host returned 501 even though this file
+#     already installed Chromium and Playwright. The digest below is the same
+#     one the k3s chart and the HA add-on pin.
+#   * `COPY deploy/pi-od`. There is no deploy/ directory in this repo, so the
+#     committed Dockerfile could not build at all; the running image was built
+#     from a layout that no longer exists.
+ARG BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
+FROM ${BUILD_FROM}
 
 USER root
 
-# --- glibc compat + Chromium + fonts + tini --------------------------------
-RUN apk add --no-cache \
-      libc6-compat gcompat \
-      chromium chromium-swiftshader \
-      nss freetype freetype-dev harfbuzz ca-certificates ttf-freefont \
-      font-noto font-noto-cjk font-noto-emoji \
-      fontconfig \
-      dbus dbus-x11 mesa-gbm \
-      wget curl \
- && fc-cache -fv
-
-# --- Playwright (wired to system chromium; no browser download) ------------
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/usr/lib/chromium \
-    CHROMIUM_PATH=/usr/bin/chromium-browser \
+# OD_PORT is the loopback daemon; the nginx sidecar owns the public 7456.
+# HOME points into the data volume so OpenCode's BYOK credentials survive a
+# restart — /home/open-design is a tmpfs in this stack.
+ENV NODE_ENV=production \
+    OD_BIND_HOST=127.0.0.1 \
+    OD_PORT=7457 \
+    OD_DATA_DIR=/app/.od \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
-    NODE_OPTIONS="--max-old-space-size=1024"
+    HOME=/app/.od/home \
+    PATH=/opt/woow-opendesign/opencode/node_modules/.bin:${PATH}
 
-RUN npm install -g playwright@1.55.1 --no-fund --no-audit \
- && chown -R open-design:open-design /root 2>/dev/null || true
+# Chromium comes from Alpine rather than a first-boot download; playwright-core
+# is locked separately in runtime/package-lock.json. The CJK and emoji fonts are
+# what keep Traditional Chinese and colour emoji out of the tofu box in exported
+# PDF/PPTX/PNG. su-exec is NOT installed: this stack never starts as root.
+RUN apk add --no-cache \
+      bash \
+      chromium \
+      font-noto-cjk \
+      font-noto-emoji \
+      fontconfig \
+      curl \
+    && fc-cache -f \
+    && rm -rf /var/cache/apk/*
 
-# --- Pi coding agent ---------------------------------------------------------
-# Open Design has a native Pi JSON-RPC runtime, but its upstream image does not
-# ship the `pi` executable. Keep this version aligned with the separately
-# deployed pi-web image so both entry points share one on-disk data format.
-ARG PI_CODING_AGENT_VERSION=0.83.0
-RUN npm install -g --omit=dev --no-fund --no-audit \
-      "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \
- && test "$(pi --version)" = "${PI_CODING_AGENT_VERSION}"
+RUN mkdir -p /app/.od /home/open-design \
+    && chown -R open-design:open-design /app/.od /home/open-design
 
-# Give only Pi subprocesses the shared Pi HOME. Setting HOME on the Open Design
-# daemon itself would move Claude and other runtime state to the wrong place.
-COPY --chmod=0755 deploy/pi-od /usr/local/bin/pi-od
-RUN test -x /usr/local/bin/pi-od
+COPY runtime/package.json runtime/package-lock.json /opt/woow-opendesign/
+COPY runtime/opencode/package.json runtime/opencode/package-lock.json /opt/woow-opendesign/opencode/
+# Absolute npm path: a build frontend may supply a reduced PATH.
+RUN /usr/local/bin/npm ci --omit=dev --prefix /opt/woow-opendesign \
+    && /usr/local/bin/npm ci --omit=dev --prefix /opt/woow-opendesign/opencode \
+    && /usr/local/bin/npm cache clean --force \
+    && chown -R open-design:open-design /opt/woow-opendesign
 
+COPY rootfs/ /
+RUN chmod 0755 \
+      /usr/local/bin/podman-opendesign \
+      /opt/woow-opendesign/headless-entry.mjs \
+      /opt/woow-opendesign/headless-renderer.mjs \
+    && chown open-design:open-design \
+      /opt/woow-opendesign/headless-entry.mjs \
+      /opt/woow-opendesign/headless-renderer.mjs
+
+# Build-time proof, so a broken image fails here instead of at 03:00 in prod.
+RUN test "$(id -u open-design)" = "1001" \
+    && test -x /usr/local/bin/node \
+    && test "$(su open-design -s /bin/sh -c 'opencode --version')" = "1.18.29" \
+    && command -v chromium-browser \
+    && command -v bash \
+    && test ! -e /usr/local/bin/pi \
+    && test ! -e /usr/local/bin/pi-od \
+    && node -e "import('/opt/woow-opendesign/headless-renderer.mjs').then(m=>{if(typeof m.renderSlides!=='function')throw new Error('renderSlides missing');console.log('renderSlides ok')})"
+
+ARG BUILD_VERSION=2.0.0
+ARG BUILD_DATE
+ARG BUILD_REF
+ARG BUILD_REPOSITORY=WOOWTECH/Woow_podman_opendesign
+
+LABEL org.opencontainers.image.title="Woow Podman OpenDesign" \
+      org.opencontainers.image.description="OpenDesign for rootless podman, aligned with the HA add-on" \
+      org.opencontainers.image.vendor="WOOWTECH" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/${BUILD_REPOSITORY}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${BUILD_REF}" \
+      org.opencontainers.image.version="${BUILD_VERSION}"
+
+# Under keep-id the container already runs as 1001; there is no root to drop.
 USER open-design
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/podman-opendesign"]
