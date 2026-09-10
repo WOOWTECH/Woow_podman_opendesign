@@ -84,6 +84,10 @@ services:
     cpus: '0.5'
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # The export bridge nginx injects into <head>. It has to be
+      # mounted beside the config because this is the stock nginx
+      # image, not the OpenDesign one.
+      - ./od-export-bridge.js:/etc/nginx/od-export-bridge.js:ro
     depends_on:
       - open-design
     healthcheck:
