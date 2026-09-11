@@ -1,27 +1,19 @@
-# Secrets — .env holds OD_API_TOKEN and optional provider API keys.
+# Per-host settings live in ~/.config/open-design/ and credentials in podman secrets.
 .env
-.env.local
-.env.bak-*
+*.env
+!config/*.env.example
+!tests/fixtures/*.env
 
-# Local overrides that must not be published
-nginx.conf.bak.*
-docker-compose.override.yml
-docker-compose.podman.override.yml
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Build artifacts
+# Build and backup artefacts
+node_modules/
 *.tar
 *.tar.gz
+*.partial
+*.bak
 
-# IDE
+# OS / editor files
+.DS_Store
+Thumbs.db
 .vscode/
 .idea/
-
-# Playwright
-.playwright-mcp/
-
-# Node
-node_modules/
+*.swp
