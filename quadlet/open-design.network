@@ -1,0 +1,7 @@
+# Private bridge for the daemon's namespace; nginx joins it. This replaces network_mode: host.
+[Unit]
+Description=Woow OpenDesign network
+
+[Network]
+NetworkName=open-design
+Label=io.woowtech.stack=open-design

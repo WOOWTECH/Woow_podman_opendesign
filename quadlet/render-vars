@@ -1,0 +1,6 @@
+# Variables scripts/install.sh may substitute into the units (@@NAME@@).
+# Computed by scripts/render-args.sh from WOOW_OD_BIND and WOOW_OD_PORT:
+OD_PUBLISH
+# Taken from ~/.config/open-design/open-design.env (validated by scripts/render-args.sh):
+WOOW_OD_MEMORY
+WOOW_OD_CPUS
