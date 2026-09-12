@@ -58,7 +58,11 @@ want="7456/tcp -> $bind:$port"
 [[ $bind == all ]] && want="7456/tcp -> 0.0.0.0:$port"
 got=$(podman port open-design 2>/dev/null || true)
 if [[ $got == "$want" ]]; then pass "A3 open-design publishes only $want"; else fail "A3 open-design publishes '${got//$'\n'/, }', want '$want'"; fi
-if ss -Htln 2>/dev/null | grep -qE '[:.]7457[[:space:]]'; then fail "A3 something listens on host port 7457"; else pass "A3 the daemon port 7457 is not on the host"; fi
+# NOT `ss ... | grep -q`: grep -q exits at the first match, ss is then killed by
+# SIGPIPE and pipefail makes that the pipeline's status. Latent only while ss's
+# output fits the 64 KiB pipe buffer.
+host_listeners=$(ss -Htln 2>/dev/null || true)
+if grep -qE '[:.]7457[[:space:]]' <<<"$host_listeners"; then fail "A3 something listens on host port 7457"; else pass "A3 the daemon port 7457 is not on the host"; fi
 
 # A4 the health endpoint is reachable without credentials (nginx exempts it)
 code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "$url/api/health" || true)
@@ -149,8 +153,13 @@ else
   warn "A11 no /_next/static asset found in the page; skipped"
 fi
 
-# A12 nginx joined the daemon's namespace cleanly
-if journalctl --user -u open-design-nginx.service -o cat --no-pager 2>/dev/null | grep -qiE 'bind\(\) to .* failed|Address (already in use|not available)'; then
+# A12 nginx joined the daemon's namespace cleanly.
+# NOT `journalctl | grep -qi`: grep -q exits at the first match, journalctl is then killed by
+# SIGPIPE (141) and pipefail makes that the pipeline's status -- so the branch that reports a
+# bind error could never be taken and this check always passed. Read the journal first, the
+# way A13 below already does.
+nginx_journal=$(journalctl --user -u open-design-nginx.service -o cat --no-pager 2>/dev/null || true)
+if grep -qiE 'bind\(\) to .* failed|Address (already in use|not available)' <<<"$nginx_journal"; then
   fail "A12 nginx reported a bind error in the shared namespace"
 else
   pass "A12 nginx bound both listeners in the shared namespace"
