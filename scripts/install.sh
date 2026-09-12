@@ -39,7 +39,7 @@ while (($#)); do
     --no-start) no_start=1 ;;
     --no-smoke) no_smoke=1 ;;
     --dry-run) export QL_DRY_RUN=1 ;;
-    -h | --help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,19p' "$0"; exit 0 ;;
     *) ql_die "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -64,6 +64,7 @@ app_refuse_env_secrets
 port=$(ql_env_get WOOW_OD_PORT)
 bind=$(ql_env_get WOOW_OD_BIND)
 auth=$(ql_env_get WOOW_OD_AUTH basic)
+od_check_auth "$auth" "$bind"
 od_check_origins "$port" "$bind"
 
 # ---- 3. legacy guards -------------------------------------------------------------------------

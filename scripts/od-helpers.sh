@@ -23,6 +23,20 @@ od_check_origins() {
   fi
 }
 
+# od_check_auth <auth> <bind>: Basic auth may only be turned off while the front is on loopback.
+# nginx is the only thing in front of the daemon, and /api/models-config returns the configured
+# provider keys, so auth=off on a routable address publishes them to the whole network -- which is
+# exactly the state this repo's Quadlet conversion exists to end. Loopback plus an SSH tunnel or an
+# authenticated reverse proxy (NPM, Cloudflare Access) is the supported way to expose it.
+od_check_auth() {
+  local auth=$1 bind=$2
+  [[ $auth == off ]] || return 0
+  [[ $bind == 127.0.0.1 || $bind == ::1 ]] && return 0
+  ql_die "WOOW_OD_AUTH=off is only allowed with WOOW_OD_BIND=127.0.0.1. WOOW_OD_BIND is currently
+'$bind', which would serve /api/models-config (your provider keys) to anyone who can reach this host.
+Either set WOOW_OD_AUTH=basic, or keep the front on loopback and put an authenticating proxy in front."
+}
+
 # od_htpasswd_secret: derive the nginx Basic-auth file from the API token secret (user "open-design",
 # password = that token), so one credential covers the browser and API clients. apr1 comes from
 # openssl, because the hosts have no htpasswd binary. The salt is derived from the token instead of

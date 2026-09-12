@@ -86,7 +86,7 @@ a unit, so the installer tracks its hash and restarts the daemon when the file c
 | `OD_ALLOWED_ORIGINS` | `http://127.0.0.1:7456,http://localhost:7456` | Every `scheme://host:port` the UI is opened from. A missing origin answers `403 {"error":"Cross-origin requests are not allowed"}` on data routes while the UI still renders. `install.sh` validates the syntax and refuses to continue without the local origin. |
 | `WOOW_OD_BIND` | `127.0.0.1` | Address the UI port is published on; `all` covers IPv4 and IPv6. |
 | `WOOW_OD_PORT` | `7456` | Host port for the UI. |
-| `WOOW_OD_AUTH` | `basic` | `off` disables the nginx credential check. Only for a stack behind an authenticating proxy. |
+| `WOOW_OD_AUTH` | `basic` | `off` disables the nginx credential check. `install.sh` refuses it unless `WOOW_OD_BIND` is loopback: `/api/models-config` returns your provider keys. Use it only behind an authenticating proxy or an SSH tunnel. |
 | `WOOW_OD_MEMORY` / `WOOW_OD_CPUS` | `2g` / `2` | Limits for the daemon container. |
 | `WOOW_OD_BUILD_CPUS` | empty | `--cpuset-cpus` for the image build, e.g. `0-2`. |
 | `NODE_OPTIONS` | `--max-old-space-size=1536` | Node heap; keep it below `WOOW_OD_MEMORY`. |

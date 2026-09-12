@@ -81,7 +81,7 @@ podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-to
 | `OD_ALLOWED_ORIGINS` | `http://127.0.0.1:7456,http://localhost:7456` | 所有會用來開啟 UI 的 `scheme://host:port`。缺少的來源會在資料路由回 `403 {"error":"Cross-origin requests are not allowed"}`，但 UI 仍會顯示。`install.sh` 會檢查格式，且缺少本機來源時拒絕繼續。 |
 | `WOOW_OD_BIND` | `127.0.0.1` | UI 埠發布的位址；`all` 同時涵蓋 IPv4 與 IPv6。 |
 | `WOOW_OD_PORT` | `7456` | UI 的主機埠。 |
-| `WOOW_OD_AUTH` | `basic` | `off` 會關閉 nginx 的憑證檢查，只適用於前面已有認證代理的情境。 |
+| `WOOW_OD_AUTH` | `basic` | `off` 會關閉 nginx 的憑證檢查。除非 `WOOW_OD_BIND` 是 loopback，否則 `install.sh` 會拒絕：`/api/models-config` 會回傳你的供應商金鑰。只適用於前面已有認證代理或 SSH 通道的情境。 |
 | `WOOW_OD_MEMORY` / `WOOW_OD_CPUS` | `2g` / `2` | daemon 容器的限制。 |
 | `WOOW_OD_BUILD_CPUS` | 空 | 映像建置的 `--cpuset-cpus`，例如 `0-2`。 |
 | `NODE_OPTIONS` | `--max-old-space-size=1536` | Node heap，需低於 `WOOW_OD_MEMORY`。 |
