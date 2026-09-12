@@ -1,6 +1,9 @@
 # Open Design Pi Runtime Migration Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Superseded — design history only.** This plan describes the podman-compose, host-network layout
+> that was replaced in v3.0.0 by the Quadlet + systemd deployment (`quadlet/`, `scripts/install.sh`).
+> The Pi runtime decisions it records still hold; the deployment mechanics in it do not. It is kept
+> for the reasoning, not as instructions. See the README for the current deployment.
 
 **Goal:** Remove OpenCode execution capability and host state from A host, then make Open Design detect and launch Pi 0.83.0 through its native RPC runtime.
 

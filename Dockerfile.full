@@ -79,7 +79,7 @@ RUN test "$(id -u open-design)" = "1001" \
     && test ! -e /usr/local/bin/pi-od \
     && node -e "import('/opt/woow-opendesign/headless-renderer.mjs').then(m=>{if(typeof m.renderSlides!=='function')throw new Error('renderSlides missing');console.log('renderSlides ok')})"
 
-ARG BUILD_VERSION=2.0.0
+ARG BUILD_VERSION=3.0.0
 ARG BUILD_DATE
 ARG BUILD_REF
 ARG BUILD_REPOSITORY=WOOWTECH/Woow_podman_opendesign
