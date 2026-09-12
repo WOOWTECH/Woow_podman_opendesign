@@ -18,7 +18,7 @@ while (($#)); do
   case $1 in
     --archive) (($# >= 2)) || ql_die "--archive needs a path"; archive=$2; shift ;;
     --confirm-restore) (($# >= 2)) || ql_die "--confirm-restore needs the word $APP"; confirm=$2; shift ;;
-    -h | --help) sed -n '2,9p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,7p' "$0"; exit 0 ;;
     *) ql_die "unknown option $1 (see --help)" ;;
   esac
   shift
