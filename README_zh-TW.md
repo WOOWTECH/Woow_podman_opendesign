@@ -140,24 +140,102 @@ scripts/uninstall.sh --purge --purge-images   # 再移除本機建置的映像
 
 ## 從 podman-compose 部署遷移
 
-volume 名稱不變（`open-design_open_design_data`），所以專案、`app.sqlite` 與 OpenCode 憑證原地沿用。
+`scripts/migrate-legacy.sh` 會把執行中的 podman-compose／docker-compose `open-design` 專案（容器
+`open-design` 與 `open-design-nginx`，兩者都在 **host** 網路上，volume
+`open-design_open_design_data`，以及從建置目錄 bind-mount 進去的 `nginx.conf` 與
+`od-export-bridge.js`）搬到本倉庫的 Quadlet 單元。
 
-1. **先決定曝光方式。** compose 版使用 host 網路，nginx 在所有介面上、無憑證地提供服務；現在預設是
-   `127.0.0.1` 加 Basic 認證。若有區網或 tailnet 使用者，請設 `WOOW_OD_BIND=all`（同時會發布 IPv6，
-   `[fd7a:…]` 這類 tailnet 來源需要），並保持認證開啟；或維持 loopback，改用 tailscale serve、NPM 或
-   tunnel 前置。
-2. **匯入既有 token**，讓 API 客戶端繼續可用，並複製來源清單：
-   ```bash
-   grep '^OD_API_TOKEN=' .env | cut -d= -f2- | tr -d '\n' | podman secret create open-design-api-token -
-   ```
-   把 `OPEN_DESIGN_ALLOWED_ORIGINS` 的值複製到 `OD_ALLOWED_ORIGINS`（值相同，只是去掉 compose 專用的
-   `OPEN_DESIGN_` 前綴），BYOK 金鑰也搬到新的 env 檔。
-3. **停止 compose 並把容器改名**，避免被 Quadlet 取代：`podman stop open-design open-design-nginx`，
-   接著 `podman rename open-design open-design-legacy-$(date +%Y%m%d)`，nginx 容器亦同。它們是
-   `unless-stopped`，所以 `podman-restart.service` 不會再啟動它們。
-4. **安裝並驗證：** `scripts/install.sh`，接著 `tests/smoke.sh`。
-5. **需要回復時**：停止 Quadlet 單元，把舊容器改回原名。請先執行 `scripts/backup.sh`：新版 daemon 可能
-   已經把 `app.sqlite` 向前遷移。
+volume 名稱不變（`VolumeName=open-design_open_design_data`），所以專案、`app.sqlite` 與 OpenCode 憑證
+是**原地沿用**，不做任何複製。舊容器會保留給 `--rollback`。
+
+```bash
+scripts/migrate-legacy.sh --dry-run                  # 只做檢查與產生單元，不改任何東西
+scripts/migrate-legacy.sh --prepare-only             # 再加上 secrets 與「映像建置」；不停機
+scripts/migrate-legacy.sh                            # 正式切換
+scripts/migrate-legacy.sh --status                   # 顯示記錄下來的狀態
+scripts/migrate-legacy.sh --rollback                 # 回到舊的 compose 堆疊
+```
+
+常用選項：`--legacy-dir DIR` 把舊建置目錄的 compose 檔與 `.env` 封存進備份；`--bind ADDR`／`--port N`／
+`--auth basic|off` 可覆寫自動推導出來的曝光方式；`--suffix S` 指定保留容器的名字；`--force-capture` 讓
+本來可以改名的主機改走 capture 路徑；`--no-cold-copy` 略過冷 `podman volume export`；
+`--allow-version-change` 允許 OpenDesign 次版本不同。
+
+**有兩件事是刻意改變的**，因為那正是本倉庫做 Quadlet 轉換的理由；腳本在切換前與結束時都會說明：
+
+| | compose（host 網路） | Quadlet |
+|---|---|---|
+| 前端 | 監聽**所有**介面 | 發布在 `127.0.0.1`（`--bind all` 可維持原本的可及範圍） |
+| daemon | 在主機上佔用 `127.0.0.1:7457` | 在容器自己的網路命名空間裡；主機上的那個埠消失 |
+| 憑證 | **完全沒有** | HTTP Basic，使用者 `open-design`，密碼為 API token |
+
+`--auth off` 只有在前端維持 loopback 時才會被接受：`/api/models-config` 會回傳已設定的供應商金鑰。舊的
+`OD_DISABLE_API_AUTH=1` **不會**被沿用——Quadlet 的 daemon 對 loopback 來源免驗（nginx 永遠只是
+loopback），其餘一律檢查 token。
+
+**映像在準備階段建置，不在切換期間。** 建置 `localhost/woow-open-design:<VERSION>` 在小型主機上需要
+10–20 分鐘；趁舊堆疊還在服務時先建好，才能把停機縮短到一次容器重啟的長度，之後 `install.sh` 會以
+`--no-build` 呼叫。
+
+**資料從哪裡讀。** 全部取自**執行中的容器**：在 `woowtechopenclaw` 上，實際部署的目錄
+（`~/od-podman-align`）根本不是 git 倉庫，也不是本倉庫描述的那一份。`OD_ALLOWED_ORIGINS`、
+`NODE_OPTIONS`、`OD_CODEX_SANDBOX`、BYOK 供應商金鑰與 `OD_API_TOKEN` 取自 daemon 的環境變數；
+`WOOW_OD_MEMORY` 與 `WOOW_OD_CPUS` 取自它的 `HostConfig`。**主機連接埠取自 bind-mount 進去的
+`nginx.conf` 裡的 `listen` 指令**：使用 host 網路時 podman 完全不會記錄任何連接埠對應，那個檔案是這個
+堆疊究竟服務在哪個埠的唯一依據。若來源清單裡沒有 `http://127.0.0.1:<port>` 會自動補上，否則 daemon 會
+對每一條資料路由回 403。
+
+**API token 會被沿用**到 `open-design-api-token` secret（只要舊堆疊有一個可用的），讓 API 客戶端繼續
+可用；它同時也是瀏覽器登入密碼。可用
+`podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-token` 讀出。
+
+**你的 `nginx.conf` 與 `od-export-bridge.js` 會被本倉庫的版本取代。** 兩個舊檔案都會封存進備份；若內容
+不同，會在旁邊寫出 unified diff 並提出警告。在建置目錄不是 git 倉庫的主機上，這是原本內容的唯一紀錄。
+
+**它拒絕而不猜測的情況。** 舊容器不存在或沒在執行；舊容器已由本單元管理；Quadlet 單元已經安裝；volume
+名稱與 `open-design-data.volume` 釘住的不同（沿用會安靜地開在空的 `app.sqlite` 上）；`nginx.conf` 讀不到
+或其 `listen` 指令彼此不一致；有別的容器佔用同一個主機連接埠；舊堆疊停止後連接埠仍被綁住；OpenDesign
+次版本不同；在可路由位址上使用 `--auth off`；以及已經記錄過切換後再跑第二次。
+
+**舊容器如何保留**（STANDARD 7a）。要嘛改名為 `<name>-legacy-<suffix>` 並保持停止，要嘛——當
+`podman-restart.service` 已啟用**且**某個舊容器的重啟策略剛好是 `always` 時——先 capture 進備份目錄再
+移除。`ql_rollback_strategy` 依主機的真實狀態判斷，絕不看主機名稱。兩個容器目前都是 `unless-stopped`，
+所以兩台主機都判定為 `rename`；`--force-capture` 用來演練另一條路徑。兩者都不使用 `--commit`：
+`open-design` 以 `--read-only` 執行，根本沒有可寫層可失去，而 `open-design-nginx` 是原廠 nginx 映像。
+
+**備份內容**（`~/.local/share/woow-backups/open-design/migrate-<時間戳>/`，0700）：`inspect.json`、舊的
+`nginx.conf` 與 `od-export-bridge.js`（以及與本倉庫版本的 `.diff`）、舊的 compose 檔與 `.env`、資料
+volume 的冷 `podman volume export`、`volume-fingerprints`、`precheck.txt` 與 `SHA256SUMS`；走 capture
+路徑時另有 `legacy-container/`。
+
+**沿用會被證明，而不是假設。** volume 的 `CreatedAt`，以及它的目錄與 `app.sqlite` 的磁碟 inode，會在切換
+前記錄、在 `install.sh` 之後比對。不一致時遷移失敗並自動回復，而不是報告一個健康但坐在空資料庫上的
+OpenDesign。
+
+**停機時間**由腳本自行量測（從停止舊堆疊到 `install.sh` 返回），結束時印出，並記錄成 `--status` 裡的
+`DOWNTIME_S`。
+
+### 回復
+
+```bash
+scripts/migrate-legacy.sh --rollback
+```
+
+它會停止並移除 Quadlet 單元（資料 volume 與 secrets 都保留，因為兩邊共用），移除本倉庫單元留下的容器，
+把舊容器帶回來——改名回去，或是從 capture 以原本的重啟策略與 host 網路重建——先啟動 daemon 再啟動前端，
+然後等待舊連接埠的 `/api/health`。切換失敗時會自動回復，除非指定了 `--no-auto-rollback`。留下來的空
+Quadlet 網路無害，可用 `podman network rm open-design` 移除。
+
+### 觀察期結束後
+
+Quadlet 堆疊穩定執行一段時間之後，移除舊容器——**先移除 nginx**，因為 `open-design-nginx` 建立時帶著
+`--requires=open-design`，podman 會拒絕移除被別人依賴的容器：
+
+```bash
+podman rm open-design-nginx-legacy-<suffix> open-design-legacy-<suffix>
+```
+
+接著若沒有其他用途，移除舊建置目錄那個映像標籤。遷移備份請保留到確認無虞為止。
 
 ## 檔案
 
@@ -170,10 +248,15 @@ config/nginx-auth.{basic,off}.conf 安裝為 ~/.config/open-design/nginx-auth.co
 config/od-export-bridge.js         注入 <head>，讓 UI 的 PDF 按鈕改打 headless 路由
 config/open-design.env.example     ~/.config/open-design/open-design.env 的範本
 scripts/                           install、upgrade、uninstall、backup、restore
+scripts/migrate-legacy.sh          沿用執行中的 compose 部署；含 --rollback、--status
+scripts/legacy-helpers.sh          migrate-legacy.sh 專用的輔助函式（刻意不放進 common.sh，後者在四個
+                                   倉庫之間的設定區塊以下是逐位元組相同的）
 scripts/lib/                       內嵌的 quadlet-lib（請勿修改；CI 會檢查其雜湊）
 tests/dryrun.sh                    產生單元 + Quadlet 4.9.3 dry-run + systemd-analyze verify（CI 與本機）
 tests/smoke.sh                     主機上的安裝後檢查
 tests/lint-repo.sh                 憑證掃描、VERSION 一致性、認證邊界不變條件（CI）
+tests/migrate-model.sh             釘住遷移行為：兩條回復路徑、依賴順序、讀取 host 網路堆疊、沿用證明
+                                   （podman 與 systemctl 皆為測試替身）
 docs/plans/                        設計歷史（host 網路的 compose 佈局已被取代）
 ```
 
