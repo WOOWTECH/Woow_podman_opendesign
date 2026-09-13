@@ -19,6 +19,9 @@ jobs:
       - name: Credentials, compose removal (D1), READMEs, VERSION parity, auth boundary
         run: tests/lint-repo.sh
 
+      - name: Migration model tests (podman and systemctl are shims; no container is created)
+        run: tests/migrate-model.sh
+
       - name: nginx -t for both auth variants
         run: |
           set -eux

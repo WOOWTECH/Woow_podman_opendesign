@@ -148,26 +148,120 @@ credentials, which share the one volume.
 
 ## Migrating a podman-compose deployment
 
-The volume name is unchanged (`open-design_open_design_data`), so projects, `app.sqlite` and the
-OpenCode credentials carry over in place.
+`scripts/migrate-legacy.sh` moves a running podman-compose / docker-compose deployment of the
+`open-design` project (containers `open-design` and `open-design-nginx`, both on the **host**
+network, the volume `open-design_open_design_data`, and an `nginx.conf` plus `od-export-bridge.js`
+bind-mounted from the build directory) onto the Quadlet units of this repo.
 
-1. **Decide how it is exposed.** The compose stack used host networking and nginx listened on every
-   interface without credentials. Now the default is `127.0.0.1` with Basic auth. For LAN or tailnet
-   users set `WOOW_OD_BIND=all` (it also publishes IPv6, which a `[fd7a:…]` tailnet origin needs) and
-   leave auth on, or keep loopback and front it with tailscale serve, NPM or a tunnel.
-2. **Import the existing token** so API clients keep working, and copy the origins:
-   ```bash
-   grep '^OD_API_TOKEN=' .env | cut -d= -f2- | tr -d '\n' | podman secret create open-design-api-token -
-   ```
-   Copy `OPEN_DESIGN_ALLOWED_ORIGINS` into `OD_ALLOWED_ORIGINS` (same values, the compose-only
-   `OPEN_DESIGN_` prefix is gone) and move any BYOK key into the new env file.
-3. **Stop the compose stack and rename its containers** so Quadlet cannot replace them:
-   `podman stop open-design open-design-nginx`, then
-   `podman rename open-design open-design-legacy-$(date +%Y%m%d)` and the same for the nginx one.
-   They are `unless-stopped`, so `podman-restart.service` will not bring them back.
-4. **Install and verify:** `scripts/install.sh`, then `tests/smoke.sh`.
-5. **Roll back** by stopping the Quadlet units and renaming the legacy containers back. Take a
-   `scripts/backup.sh` first: the newer daemon may have migrated `app.sqlite` forward.
+The volume name is unchanged (`VolumeName=open-design_open_design_data`), so projects, `app.sqlite`
+and the OpenCode credentials are **adopted in place**: nothing is copied. The legacy containers are
+kept for `--rollback`.
+
+```bash
+scripts/migrate-legacy.sh --dry-run                  # checks + render, changes nothing
+scripts/migrate-legacy.sh --prepare-only             # + secrets and THE IMAGE BUILD; no downtime
+scripts/migrate-legacy.sh                            # the cutover
+scripts/migrate-legacy.sh --status                   # what was recorded
+scripts/migrate-legacy.sh --rollback                 # back to the legacy stack
+```
+
+Useful options: `--legacy-dir DIR` archives the old build directory's compose file and `.env`;
+`--bind ADDR` / `--port N` / `--auth basic|off` override the derived exposure; `--suffix S` names
+the kept containers; `--force-capture` takes the capture path on a host that would allow a rename;
+`--no-cold-copy` skips the cold `podman volume export`; `--allow-version-change` permits a different
+OpenDesign minor version.
+
+**Two things deliberately change**, because they are why this repo's Quadlet conversion exists, and
+the script says so before the cutover and again at the end:
+
+| | compose (host network) | Quadlet |
+|---|---|---|
+| the front | listens on **every** interface | published on `127.0.0.1` (`--bind all` keeps the old reach) |
+| the daemon | holds `127.0.0.1:7457` on the host | inside its own network namespace; the host port is gone |
+| credentials | **none** | HTTP Basic as user `open-design`, password = the API token |
+
+`--auth off` is accepted only while the front stays on loopback: `/api/models-config` returns the
+configured provider keys. The legacy `OD_DISABLE_API_AUTH=1` is **not** carried over — the Quadlet
+daemon exempts loopback peers, which is all nginx ever is, and checks the token for everything else.
+
+**The image is built in the prepare phase, not during the cutover.** Building
+`localhost/woow-open-design:<VERSION>` takes 10-20 minutes on a small host; doing it while the
+legacy stack is still serving is what keeps the downtime to the length of a container restart, and
+`install.sh` is then called with `--no-build`.
+
+**What it reads from where.** Everything comes from the *running containers*, because on
+`woowtechopenclaw` the deployed tree (`~/od-podman-align`) is not a git repository and is not the
+tree this repo describes. `OD_ALLOWED_ORIGINS`, `NODE_OPTIONS`, `OD_CODEX_SANDBOX`, the BYOK
+provider keys and `OD_API_TOKEN` come from the daemon's environment; `WOOW_OD_MEMORY` and
+`WOOW_OD_CPUS` from its `HostConfig`. The **host port comes from the `listen` directive of the
+bind-mounted `nginx.conf`**: with host networking podman records no port binding at all, so that
+file is the only statement of which port the stack serves. `http://127.0.0.1:<port>` is added to
+the origin list if it is missing, because without it the daemon answers 403 on every data route.
+
+**The API token is adopted** into the `open-design-api-token` secret when the legacy stack has a
+usable one, so API clients keep working; it is also the browser password. Read it with
+`podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-token`.
+
+**Your `nginx.conf` and `od-export-bridge.js` are replaced by this repo's copies.** Both legacy
+files are archived in the backup and, if they differ, a unified diff is written next to them and the
+difference is reported. On a host whose build directory is not a git repository this is the only
+record of what was there.
+
+**What it refuses rather than guesses.** A legacy container that is missing or not running; one that
+is already managed by these units; Quadlet units that are already installed; a volume whose name
+differs from what `open-design-data.volume` pins (adopting would silently start on an empty
+`app.sqlite`); an `nginx.conf` that cannot be read or whose `listen` directives disagree; another
+container publishing the same host port; a port still bound after the legacy stack stopped; a
+different OpenDesign minor version; `--auth off` on a routable address; and a second run after a
+recorded cutover.
+
+**How the legacy containers are kept** (STANDARD 7a). Either renamed to `<name>-legacy-<suffix>` and
+left stopped, or — where `podman-restart.service` is enabled *and* a legacy container's restart
+policy is exactly `always` — captured into the backup directory and removed. `ql_rollback_strategy`
+decides from the host's real state, never from its name. Both containers are `unless-stopped` today,
+so both hosts resolve to `rename`; `--force-capture` exercises the other path. Neither container is
+captured with `--commit`: `open-design` runs with `--read-only` and has no writable layer to lose,
+and `open-design-nginx` is the stock nginx image.
+
+**What the backup holds** (`~/.local/share/woow-backups/open-design/migrate-<stamp>/`, 0700):
+`inspect.json`, the legacy `nginx.conf` and `od-export-bridge.js` (plus a `.diff` against this
+repo's copies), the legacy compose file and `.env`, a cold `podman volume export` of the data
+volume, `volume-fingerprints`, `precheck.txt` and `SHA256SUMS` — and `legacy-container/` on the
+capture path.
+
+**Adoption is proved, not assumed.** The volume's `CreatedAt` and the on-disk inodes of its
+directory and of `app.sqlite` are recorded before the cutover and compared after `install.sh`. A
+mismatch fails the migration and rolls it back, instead of reporting a healthy OpenDesign sitting on
+an empty database.
+
+**Downtime** is measured by the script, from stopping the legacy stack to `install.sh` returning,
+and printed at the end (and recorded as `DOWNTIME_S` in `--status`).
+
+### Rolling back
+
+```bash
+scripts/migrate-legacy.sh --rollback
+```
+
+It stops and removes the Quadlet units (the data volume and the secrets are kept, because both
+stacks share them), removes any container this repo's units left behind, brings the legacy
+containers back — renamed back, or recreated from the capture with their original restart policy
+and their host networking — starts the daemon before its front, and waits for `/api/health` on the
+legacy port. A failed cutover rolls itself back automatically unless `--no-auto-rollback` was given.
+The empty Quadlet network is a harmless leftover: `podman network rm open-design`.
+
+### After the soak
+
+Once the Quadlet stack has run long enough, remove the legacy containers — **the nginx one first**,
+because `open-design-nginx` was created with `--requires=open-design` and podman refuses to remove a
+container something else requires:
+
+```bash
+podman rm open-design-nginx-legacy-<suffix> open-design-legacy-<suffix>
+```
+
+Then remove the old build directory's image tag if nothing else uses it, and keep the migration
+backup until you are sure.
 
 ## Files
 
@@ -180,10 +274,15 @@ config/nginx-auth.{basic,off}.conf installed as ~/.config/open-design/nginx-auth
 config/od-export-bridge.js         injected into <head> so the UI's PDF button hits the headless route
 config/open-design.env.example     template for ~/.config/open-design/open-design.env
 scripts/                           install, upgrade, uninstall, backup, restore
+scripts/migrate-legacy.sh          adopt a running compose deployment; --rollback, --status
+scripts/legacy-helpers.sh          the helpers migrate-legacy.sh uses (kept out of common.sh, which is
+                                   byte-identical across four repos below its settings block)
 scripts/lib/                       vendored quadlet-lib (do not edit; CI checks its hash)
 tests/dryrun.sh                    render + Quadlet 4.9.3 dry-run + systemd-analyze verify (CI and local)
 tests/smoke.sh                     post-install checks on a host
 tests/lint-repo.sh                 credential scan, VERSION parity, auth-boundary invariants (CI)
+tests/migrate-model.sh             pins the migration: both rollback strategies, the dependency order,
+                                   reading a host-networked stack, the adoption proof (shim-driven)
 docs/plans/                        design history (the host-network compose layout is superseded)
 ```
 
