@@ -376,6 +376,7 @@ od_htpasswd_secret
 app_render "$WORK/render" "$ENV_FILE"
 # The image build is the slow part (10-20 minutes on a small host). Doing it here, while the legacy
 # stack is still serving, is what keeps the cutover to the length of a container restart.
+# shellcheck disable=SC2119 # od_build_image's only parameter is the optional --force
 od_build_image
 ql_pull_images "$WORK/render/out"
 
