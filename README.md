@@ -1,204 +1,199 @@
-# Woow Podman Open Design
+# Woow OpenDesign on rootless Podman (Quadlet + systemd)
 
-[![Podman](https://img.shields.io/badge/Podman-%E2%89%A54.4%20rootless-892CA0)](https://podman.io)
-[![OD](https://img.shields.io/badge/upstream-ghcr.io%2Fnexu--io%2Fod-blue)](https://github.com/nexu-io/od)
+[![Podman](https://img.shields.io/badge/Podman-%E2%89%A54.9%20rootless-892CA0)](https://podman.io)
+[![OD](https://img.shields.io/badge/upstream-ghcr.io%2Fnexu--io%2Fod%200.21.1-blue)](https://github.com/nexu-io/od)
 [![OpenCode](https://img.shields.io/badge/opencode--ai-1.18.29-blue)](https://www.npmjs.com/package/opencode-ai)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **English** · [繁體中文](README_zh-TW.md)
 
-Upstream Open Design (`ghcr.io/nexu-io/od`, digest-pinned at 0.21.1) with a
-headless export pipeline (Chromium + Playwright + CJK fonts) and the
-**OpenCode** coding agent baked in, packaged to run on **rootless Podman**
-with an **nginx sidecar** in front for gzip + cache + WebSocket/SSE
-passthrough.
+Upstream Open Design (`ghcr.io/nexu-io/od`, pinned by digest at 0.21.1) with a headless export
+pipeline (Chromium + Playwright + CJK fonts) and the **OpenCode** agent baked in, running as rootless
+Podman [Quadlet](https://docs.podman.io/en/v4.9.3/markdown/podman-systemd.unit.5.html) units under
+`systemd --user`, with an **nginx front** for gzip, caching, SSE/WebSocket passthrough, the PDF export
+bridge — and the sign-in dialog.
 
-**Standalone.** It shares no volume, no credentials and no agent binary with
-any other deployment, and mounts nothing from the host filesystem. This is the
-same shape as the Home Assistant add-on and the k3s chart, all three pinned to
-the same upstream digest.
+**Standalone.** It shares no volume, no credentials and no agent binary with any other deployment, and
+mounts nothing from your home directory except its own config files.
 
----
+> **Docker or podman-compose users:** the compose file was removed in 3.0.0. The last compose version
+> is kept at the tag
+> [`compose-final`](https://github.com/WOOWTECH/Woow_podman_opendesign/tree/compose-final). It is not
+> maintained and it serves the UI on every interface without a credential check. Upstream also ships
+> its own `deploy/docker-compose.yml`.
 
 ## What you get
 
 | | |
 |---|---|
-| **UI** | `http://<host>:7456` — served by the nginx sidecar (gzip + `immutable` cache on `/_next/static/`, `/static/`, plugin assets) |
-| **Daemon** | `ghcr.io/nexu-io/od:0.21.1` on `127.0.0.1:7457` (loopback only; nginx is the only public entry). Started through `headless-entry.mjs`, which injects the Playwright slide renderer the stock entrypoint has no way to supply |
-| **Coding agent** | `opencode-ai@1.18.29` baked into the image at `/opt/woow-opendesign/opencode`, on `PATH`. Its BYOK credentials live in `$HOME` = `/app/.od/home`, inside the data volume, so they survive a restart |
-| **Export pipeline** | Alpine's Chromium + `playwright-core` 1.55.0 + Noto CJK/emoji fonts. `/api/version` reports `capabilities.slideRenderer: true` and the PPTX / PDF / PNG / JPEG routes return real bytes instead of 501 |
-| **Rootless** | `userns_mode: keep-id:uid=1001,gid=1001` — the container's `open-design` user maps to your host uid, so the named volume is writable with no chown in the entrypoint. Nothing is bind-mounted from your home directory |
-| **Read-only rootfs** | Base image's `/` is immutable; writable paths are the tmpfs `/tmp` + `/home/open-design`, plus the single `open_design_data` volume |
+| **UI** | `http://127.0.0.1:7456` by default, served by the nginx unit. **Basic auth is on by default**: user `open-design`, password = the generated API token. |
+| **Daemon** | `open-design` (unit `open-design.service`), a locally built image `localhost/woow-open-design:<VERSION>`, listening on `127.0.0.1:7457` inside its own network namespace. |
+| **nginx front** | `open-design-nginx` (unit `open-design-nginx.service`), pinned `nginx:1.30.4-alpine`, joins the daemon's namespace (`Network=container:open-design`). It stops and starts with the daemon. |
+| **Data** | one volume, `open-design_open_design_data` (`/app/.od`): projects, `app.sqlite` and the OpenCode credentials in `$HOME=/app/.od/home`. |
+| **Limits** | `PidsLimit` 512 / 128 and memory + CPU limits are really applied now. podman-compose 1.0.6 silently dropped `pids_limit`, so the compose deployment ran with the 2048 default. |
+| **Rootless** | `UserNS=keep-id:uid=1001,gid=1001`, read-only root filesystem, `NoNewPrivileges`, tmpfs for `/tmp` and `/home/open-design`. |
 
----
+> **Where the credential check lives.** Upstream's `OD_API_TOKEN` is only enforced for **non-loopback**
+> callers (`apps/daemon/src/api-token-auth.ts`; the desktop UI flow depends on the exemption). nginx
+> always reaches the daemon over loopback, so the token alone never protected `:7456` — including
+> `/api/models-config`, which returns provider keys. That is why nginx now asks for credentials, with
+> the same token as the password, and why `/api/health` is the only exemption.
 
-## Prerequisites
+## Requirements
 
-- **Podman ≥ 4.4** with `podman-compose` 1.0.6+
-- Rootless user account, `loginctl enable-linger $(whoami)` recommended so the stack survives logout
-- Roughly 2 GB of RAM for the container. Chromium does not start inside the
-  old 384 MB ceiling, which is why `OPEN_DESIGN_MEM_LIMIT` now defaults to `2g`.
-
-No sibling deployment, host glibc mount or host agent CLI is required any more.
-
----
+- Linux with systemd and cgroup v2. Tested on Ubuntu 24.04.
+- Podman 4.9 or newer, rootless (`keep-id:uid=…` needs 4.3+), plus `openssl` and `curl`.
+- A normal login session for the user who owns the containers, and linger (install.sh enables it).
+- About 6 GB of disk for the build (upstream base ~1.2 GB, Chromium/fonts/npm layer ~1 GB, build
+  cache), and about 2 GB of RAM for the daemon. A PDF export peaks near that.
+- A free port, 7456 by default.
 
 ## Install
 
 ```bash
 git clone https://github.com/WOOWTECH/Woow_podman_opendesign.git
 cd Woow_podman_opendesign
-
-# Copy env template; edit before starting for real
-cp .env.example .env
-
-# Fill in OPEN_DESIGN_ALLOWED_ORIGINS with every hostname the UI will be
-# opened from. Missing origins fail with HTTP 403 from OD's origin guard
-# and the UI renders but every data route breaks — see the CORS note
-# below.
-$EDITOR .env
-
-# Build the image and bring the stack up
-./scripts/install.sh
+scripts/install.sh                           # first run: creates the settings file and stops for review
+nano ~/.config/open-design/open-design.env   # at least OD_ALLOWED_ORIGINS
+scripts/install.sh                           # build, render, validate, start, smoke
 ```
 
-First boot pulls the upstream OD image (`ghcr.io/nexu-io/od:latest`, ~1.2 GB)
-and adds a ~1 GB layer for Chromium + Playwright + fonts. The resulting local
-image is `~2.3 GB`. Subsequent starts reuse the cached layer.
-
-### Uninstall
+The first run builds `localhost/woow-open-design:$(cat VERSION)` from `Dockerfile.full`; that takes
+10-20 minutes on a small host. `WOOW_OD_BUILD_CPUS` (and `nice`) keep it from starving co-located
+stacks. Then sign in at `http://127.0.0.1:7456/`:
 
 ```bash
-./scripts/uninstall.sh           # stops the stack, keeps open_design_data
-./scripts/uninstall.sh --purge   # also deletes open_design_data
+podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-token   # private terminal
 ```
 
-`--purge` deletes the projects **and** the OpenCode credentials in `$HOME`,
-both of which live in `open_design_data`. There is no second volume any more.
+| Option | Effect |
+|---|---|
+| `--accept-defaults` | On the first run, keep going with the example settings. |
+| `--set KEY=VALUE` | Store a setting first (repeatable), e.g. `--set WOOW_OD_PORT=27456`. |
+| `--no-build` / `--rebuild` | Skip the build (the tag must exist) / force a rebuild of the current tag. |
+| `--rotate-token` | Generate a new API token, derive the new browser password, restart. |
+| `--dry-run` | Render and validate, show what would change, touch nothing. |
 
----
+Re-running `install.sh` is safe: with nothing changed it restarts nothing.
 
-## The CORS rule that catches everyone
+## Configure
 
-OD's origin-validation middleware rejects any browser origin that is not
-explicitly listed in `OD_ALLOWED_ORIGINS`. The failure mode is
-distinctive: the UI HTML loads, and then every data route returns
+Edit `~/.config/open-design/open-design.env`, then run `scripts/install.sh` again. The env file is not
+a unit, so the installer tracks its hash and restarts the daemon when the file changed.
 
-```
-HTTP 403 {"error":"Cross-origin requests are not allowed"}
-```
+| Key | Default | Meaning |
+|---|---|---|
+| `OD_ALLOWED_ORIGINS` | `http://127.0.0.1:7456,http://localhost:7456` | Every `scheme://host:port` the UI is opened from. A missing origin answers `403 {"error":"Cross-origin requests are not allowed"}` on data routes while the UI still renders. `install.sh` validates the syntax and refuses to continue without the local origin. |
+| `WOOW_OD_BIND` | `127.0.0.1` | Address the UI port is published on; `all` covers IPv4 and IPv6. |
+| `WOOW_OD_PORT` | `7456` | Host port for the UI. |
+| `WOOW_OD_AUTH` | `basic` | `off` disables the nginx credential check. `install.sh` refuses it unless `WOOW_OD_BIND` is loopback: `/api/models-config` returns your provider keys. Use it only behind an authenticating proxy or an SSH tunnel. |
+| `WOOW_OD_MEMORY` / `WOOW_OD_CPUS` | `2g` / `2` | Limits for the daemon container. |
+| `WOOW_OD_BUILD_CPUS` | empty | `--cpuset-cpus` for the image build, e.g. `0-2`. |
+| `NODE_OPTIONS` | `--max-old-space-size=1536` | Node heap; keep it below `WOOW_OD_MEMORY`. |
+| `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | empty | Optional BYOK keys; they can also be set on the Models page. |
 
-In compose the variable is spelled `OPEN_DESIGN_ALLOWED_ORIGINS` (mapped
-to the container's `OD_ALLOWED_ORIGINS` automatically). Fill it with **every
-scheme + host + port** combination a user might reach the UI from — LAN IP,
-tailnet IP, tailnet MagicDNS name, Cloudflare Tunnel hostname, dev
-`127.0.0.1`. After editing, recreate the container:
+### Credentials
+
+| Podman secret | What it is |
+|---|---|
+| `open-design-api-token` | The API token, and the password of the browser user `open-design`. Generated at install. |
+| `open-design-htpasswd` | The apr1 hash nginx checks, derived from that token (deterministic salt, so an unchanged token changes nothing). |
+
+Rotate both with `scripts/install.sh --rotate-token`.
+
+## Verify
 
 ```bash
-podman rm -f open-design && podman-compose -f docker-compose.podman.yml up -d
+tests/smoke.sh            # units, health, ports, limits, rootless/read-only, auth, origins,
+                          # export bridge, gzip and caching, namespace, secret hygiene
+tests/smoke.sh --quick    # units, health, ports and /api/health only
 ```
 
-`.env` reload does **not** take effect on a running container.
+From another machine, use `ssh -L 7456:127.0.0.1:7456 <host>` and open `http://127.0.0.1:7456/`.
 
----
-
-## The nginx sidecar
-
-Nginx is here for four things, in order of importance:
-
-1. **Gzip** — OD's Express serves ~9 MB of JS/CSS uncompressed on cold load;
-   gzip drops it to ~2 MB. Single biggest UX win.
-2. **`immutable` cache** on hashed paths (`/_next/static/`, `/static/`,
-   `/agent-icons/`, `/api/plugins/*/asset/`). OD sets `Cache-Control:
-   max-age=0` on these, which forces browsers to re-validate 20+ chunks
-   per page load. Overriding with `max-age=31536000, immutable` collapses
-   that to zero requests after the first.
-3. **`Host: $http_host` preservation** — OD's origin check rejects a Host
-   that has been port-stripped. Using nginx's `$host` (the default
-   suggested in many recipes) drops the port and the daemon then answers
-   403 on every guarded route. See [nginx.conf](nginx.conf) line 78.
-4. **WebSocket + SSE passthrough** — Next.js HMR, chat streams, MCP over
-   SSE, `/api/agents?stream=1`, `/api/memory/events`, `/api/integrations/vela/*`.
-   Buffering is off for the whole `/api/` tree; enumerating individual SSE
-   endpoints is a footgun.
-
-The daemon itself binds only to `127.0.0.1:7457`. Publishing it directly
-would remove the sidecar's ability to enforce any of the above; the layout
-assumes browsers only ever talk to `:7456`.
-
----
-
-## Coding agent
-
-`opencode-ai@1.18.29` is installed into the image at
-`/opt/woow-opendesign/opencode` and put on `PATH`. Nothing is spawned from the
-host and no wrapper script scopes its `HOME`: the whole daemon runs with
-`HOME=/app/.od/home`, inside the data volume, so OpenCode's BYOK credentials
-and session state survive `podman restart`.
-
-That last part is the reason `HOME` moved. It used to be `/home/open-design`,
-which this stack mounts as a **tmpfs** — every restart silently signed the user
-out of their own agent.
-
-Check it is live:
+## Upgrade
 
 ```bash
-curl -s http://127.0.0.1:7456/api/agents \
-  | python3 -c 'import json,sys; [print(a["id"], a["available"]) for a in json.load(sys.stdin)["agents"] if a["available"]]'
-# opencode True
-# byok-opencode True
+git pull
+scripts/upgrade.sh
 ```
 
-If a run fails with `No API key found`, set one of `DEEPSEEK_API_KEY` /
-`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in `.env` and recreate the container, or
-add the key from the UI's Models page — it is written to `$HOME` and persists.
+Backup, unit snapshot, `install.sh` (which builds the new `VERSION` tag), smoke. On failure the
+previous units come back, and with them the previous image tag, which is still on the host because
+every VERSION builds its own tag. The daemon migrates `app.sqlite` forward, so a rollback across a
+data-format change also needs `scripts/restore.sh` with the pre-upgrade archive.
 
----
+## Backup and restore
 
-## Layout
-
-```
-Dockerfile.full              pinned OD 0.21.1 + Chromium + Playwright + OpenCode
-docker-compose.podman.yml    the two-service stack (daemon + nginx), host network mode
-nginx.conf                   gzip, immutable cache, Host+Origin preservation, SSE passthrough
-runtime/                     lockfiles pinning playwright-core and opencode-ai
-rootfs/                      headless-entry.mjs + headless-renderer.mjs + the launcher
-.env.example                 sample environment; copy to .env and edit
-scripts/install.sh           build image, up -d, wait for healthy
-scripts/uninstall.sh         down; --purge removes open_design_data
-docs/plans/                  design notes for the changes that shaped this deployment
+```bash
+scripts/backup.sh                    # stops the daemon, exports the data volume, checksums it
+scripts/backup.sh --hot              # without stopping (app.sqlite may be mid-write)
+scripts/restore.sh --archive ~/.local/share/woow-backups/open-design/backup-<ts>/open-design_open_design_data-<ts>.tar --confirm-restore open-design
 ```
 
----
+Backups land in `~/.local/share/woow-backups/open-design/` (0600 files, 0700 directories, with
+`SHA256SUMS`). A restore stops the stack, keeps a pre-restore copy, replaces the volume and
+smoke-checks the result.
 
-## Security posture
+## Uninstall
 
-- **Read-only rootfs** on the daemon container. Writable paths are `/tmp`
-  (tmpfs), `/home/open-design` (tmpfs), and the two named volumes.
-- **`no-new-privileges`** + rootless — the daemon runs as an unprivileged
-  host user.
-- **`OD_API_TOKEN`** is a shared secret; only enforced when
-  `OPEN_DESIGN_DISABLE_API_AUTH` is unset or 0. In deployments where the
-  UI is reachable only through an authenticating reverse proxy (nginx
-  Basic auth, CF Access, etc.), leaving auth off is a reasonable choice
-  and matches the reference `.197` deployment. **Do not disable auth on
-  a stack that is directly reachable from the internet or an untrusted
-  LAN.**
-- **`/api/models-config`** returns configured provider keys unredacted
-  once you get past the origin guard + auth (if any). The trust boundary
-  is whatever is in front of `:7456`; the daemon itself does not redact.
+```bash
+scripts/uninstall.sh                          # remove the units; keep the volume, network, secrets, settings
+scripts/uninstall.sh --purge                  # also delete them, after a final backup (asks you to type "open-design")
+scripts/uninstall.sh --purge --purge-images   # and remove the locally built images
+```
 
----
+`--purge` is the only command that deletes data, and it deletes your projects **and** the OpenCode
+credentials, which share the one volume.
 
-## Documentation
+## Migrating a podman-compose deployment
 
-- [Design notes](docs/plans/) — dated implementation plans for the changes
-  that shaped this stack
-- [Upstream Open Design](https://github.com/nexu-io/od)
-- [Sibling: Woow_podman_pi_agent_package](https://github.com/WOOWTECH/Woow_podman_pi_agent_package)
-- [繁體中文說明](README_zh-TW.md)
+The volume name is unchanged (`open-design_open_design_data`), so projects, `app.sqlite` and the
+OpenCode credentials carry over in place.
 
-## License
+1. **Decide how it is exposed.** The compose stack used host networking and nginx listened on every
+   interface without credentials. Now the default is `127.0.0.1` with Basic auth. For LAN or tailnet
+   users set `WOOW_OD_BIND=all` (it also publishes IPv6, which a `[fd7a:…]` tailnet origin needs) and
+   leave auth on, or keep loopback and front it with tailscale serve, NPM or a tunnel.
+2. **Import the existing token** so API clients keep working, and copy the origins:
+   ```bash
+   grep '^OD_API_TOKEN=' .env | cut -d= -f2- | tr -d '\n' | podman secret create open-design-api-token -
+   ```
+   Copy `OPEN_DESIGN_ALLOWED_ORIGINS` into `OD_ALLOWED_ORIGINS` (same values, the compose-only
+   `OPEN_DESIGN_` prefix is gone) and move any BYOK key into the new env file.
+3. **Stop the compose stack and rename its containers** so Quadlet cannot replace them:
+   `podman stop open-design open-design-nginx`, then
+   `podman rename open-design open-design-legacy-$(date +%Y%m%d)` and the same for the nginx one.
+   They are `unless-stopped`, so `podman-restart.service` will not bring them back.
+4. **Install and verify:** `scripts/install.sh`, then `tests/smoke.sh`.
+5. **Roll back** by stopping the Quadlet units and renaming the legacy containers back. Take a
+   `scripts/backup.sh` first: the newer daemon may have migrated `app.sqlite` forward.
 
-MIT
+## Files
+
+```
+Dockerfile.full runtime/ rootfs/   image build inputs (unchanged)
+VERSION                            the local image tag; the unit and CI follow it
+quadlet/                           Quadlet units with @@VAR@@ tokens; quadlet/render-vars is the whitelist
+config/nginx.conf                  the front: gzip, caching, SSE, the auth include, the export bridge
+config/nginx-auth.{basic,off}.conf installed as ~/.config/open-design/nginx-auth.conf
+config/od-export-bridge.js         injected into <head> so the UI's PDF button hits the headless route
+config/open-design.env.example     template for ~/.config/open-design/open-design.env
+scripts/                           install, upgrade, uninstall, backup, restore
+scripts/lib/                       vendored quadlet-lib (do not edit; CI checks its hash)
+tests/dryrun.sh                    render + Quadlet 4.9.3 dry-run + systemd-analyze verify (CI and local)
+tests/smoke.sh                     post-install checks on a host
+tests/lint-repo.sh                 credential scan, VERSION parity, auth-boundary invariants (CI)
+docs/plans/                        design history (the host-network compose layout is superseded)
+```
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| The browser asks for a password you do not have | `podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-token`, user `open-design`. Or rotate: `scripts/install.sh --rotate-token`. |
+| The UI renders but every action fails with 403 | The origin you opened is not in `OD_ALLOWED_ORIGINS`. Add it and run `scripts/install.sh`. |
+| The PDF button returns 501 | The export bridge is not being injected: check `config/nginx.conf` and `podman logs open-design-nginx`. |
+| nginx keeps restarting | It lives in the daemon's namespace: `journalctl --user -u open-design-nginx.service -n 50`, and make sure `open-design.service` is up. |
+| The build is slow or starves the host | `WOOW_OD_BUILD_CPUS=0-2`, or build once and copy the image to other hosts. |
+| Units gone after logout or reboot | `loginctl show-user $USER -p Linger` must say `yes`. |

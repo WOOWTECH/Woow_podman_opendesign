@@ -1,0 +1,8 @@
+# Keeps the podman-compose name (project "open-design" + volume "open_design_data"), so an existing
+# host adopts its projects, app.sqlite and the OpenCode credentials in $HOME=/app/.od/home in place.
+[Unit]
+Description=Woow OpenDesign data volume (/app/.od)
+
+[Volume]
+VolumeName=open-design_open_design_data
+Label=io.woowtech.stack=open-design

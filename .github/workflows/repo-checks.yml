@@ -1,0 +1,42 @@
+# .github/workflows/repo-checks.yml: repo-specific static checks. quadlet-ci.yml is vendored from
+# Woow_quadlet_migration_plan/lib and must not be edited; checks that belong to this repo live here.
+name: repo-checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Credentials, compose removal (D1), READMEs, VERSION parity, auth boundary
+        run: tests/lint-repo.sh
+
+      - name: nginx -t for both auth variants
+        run: |
+          set -eux
+          # The units mount these three files plus the htpasswd secret; check the config parses with
+          # the same nginx version the unit pins.
+          image=$(sed -n 's/^Image=//p' quadlet/open-design-nginx.container)
+          printf 'open-design:$apr1$dummysal$0123456789abcdefghijkl.\n' > /tmp/htpasswd
+          for variant in basic off; do
+            docker run --rm \
+              -v "$PWD/config/nginx.conf:/etc/nginx/nginx.conf:ro" \
+              -v "$PWD/config/nginx-auth.$variant.conf:/etc/nginx/woow-auth.conf:ro" \
+              -v "$PWD/config/od-export-bridge.js:/etc/nginx/od-export-bridge.js:ro" \
+              -v /tmp/htpasswd:/etc/nginx/htpasswd:ro \
+              "$image" nginx -t
+          done
+
+      - name: hadolint on Dockerfile.full
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile.full
+          failure-threshold: error

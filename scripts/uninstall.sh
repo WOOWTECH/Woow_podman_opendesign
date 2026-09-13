@@ -1,29 +1,67 @@
 #!/usr/bin/env bash
-# Take the OD stack down. The named volume open_design_data is KEPT by
-# default (it holds projects, app.sqlite, and $HOME with OpenCode's saved
-# credentials); pass --purge to delete it.
+# scripts/uninstall.sh: remove the Woow OpenDesign Quadlet units. Keeps all data by default.
 #
-#   ./scripts/uninstall.sh            keep open_design_data, keep the image
-#   ./scripts/uninstall.sh --purge    also delete open_design_data
+#   scripts/uninstall.sh                  stop and remove the units; keep the data volume, network,
+#                                         secrets, images, ~/.config/open-design and every backup
+#   scripts/uninstall.sh --purge [--yes]  also delete the volume (projects, app.sqlite and the
+#                                         OpenCode credentials in $HOME=/app/.od/home), the network,
+#                                         the secrets and ~/.config/open-design, after a final backup
+#   scripts/uninstall.sh --purge-images   also remove localhost/woow-open-design:*
+#   scripts/uninstall.sh --dry-run        report what would be removed
+#
+# --purge is the only way this repo deletes data. Backups are never deleted.
+# shellcheck source-path=SCRIPTDIR
 set -euo pipefail
+REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+# shellcheck source=lib/quadlet-lib.sh
+. "$REPO/scripts/lib/quadlet-lib.sh"
+# shellcheck source=common.sh
+. "$REPO/scripts/common.sh"
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${REPO_DIR}"
+purge=0 yes=0 purge_images=0
+while (($#)); do
+  case $1 in
+    --purge) purge=1 ;;
+    --yes) yes=1 ;;
+    --purge-images) purge_images=1 ;;
+    --dry-run) export QL_DRY_RUN=1 ;;
+    -h | --help) sed -n '2,12p' "$0"; exit 0 ;;
+    *) ql_die "unknown option $1 (see --help)" ;;
+  esac
+  shift
+done
+ql_require_rootless
+app_lock
 
-say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m!!\033[0m %s\n' "$*"; }
-
-PURGE="${1:-}"
-
-say "Stopping services"
-podman-compose -f docker-compose.podman.yml down 2>&1 | tail -5 || true
-
-if [ "${PURGE}" = "--purge" ]; then
-    say "Deleting open_design_data (--purge given)"
-    warn "This deletes every project AND the OpenCode credentials in \$HOME."
-    podman volume rm -f open-design_open_design_data 2>/dev/null || true
+if ((purge)); then
+  app_confirm "$APP" "$yes" "--purge deletes the OpenDesign projects, credentials, network and settings"
+  if [[ ${QL_DRY_RUN:-0} != 1 ]]; then
+    final=$(app_new_backup_dir final)
+    systemctl --user stop open-design.service >/dev/null 2>&1 || true
+    if podman volume exists open-design_open_design_data; then
+      ql_backup_volume open-design_open_design_data "$final" >/dev/null
+    fi
+    if [[ -f $ENV_FILE ]]; then install -m 600 -- "$ENV_FILE" "$final/${ENV_FILE##*/}"; fi
+    app_checksums "$final"
+    ql_info "final backup: $final"
+  fi
+  ql_uninstall_units "$APP" --purge
+  if [[ ${QL_DRY_RUN:-0} == 1 ]]; then
+    ql_info "[dry-run] --purge would also remove $HOME/.config/$APP"
+  else
+    rm -rf -- "$HOME/.config/$APP"
+    ql_info "removed $HOME/.config/$APP (a copy of the env file is in the final backup)"
+  fi
 else
-    say "Keeping open_design_data — remove with: podman volume rm open-design_open_design_data"
+  ql_uninstall_units "$APP"
 fi
 
-say "Done."
+if ((purge_images)); then
+  if [[ ${QL_DRY_RUN:-0} == 1 ]]; then
+    ql_info "[dry-run] would remove the localhost/woow-open-design images"
+  else
+    mapfile -t imgs < <(podman images --filter reference='localhost/woow-open-design' --format '{{.ID}}' | sort -u)
+    ((${#imgs[@]} == 0)) || podman rmi -f "${imgs[@]}" >/dev/null 2>&1 || ql_warn "could not remove every local image"
+    ql_info "removed ${#imgs[@]} local OpenDesign image(s); the nginx image is left (other stacks may use it)"
+  fi
+fi
