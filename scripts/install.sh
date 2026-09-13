@@ -49,8 +49,7 @@ dry=${QL_DRY_RUN:-0}
 # ---- 1. host preflight ------------------------------------------------------------------------
 ql_preflight "$PODMAN_MIN"
 ql_enable_linger
-app_lock
-
+ql_lock "$APP"
 # ---- 2. per-host settings ---------------------------------------------------------------------
 ql_env_ensure "$ENV_EXAMPLE" "$ENV_FILE"
 if [[ $QL_ENV_CREATED == 1 && $accept == 0 && ${#sets[@]} == 0 ]]; then
@@ -72,7 +71,7 @@ app_guard_containers
 
 # ---- 4. stage, render, validate -----------------------------------------------------------------
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/$APP-install.XXXXXX")
-trap 'rm -rf "$WORK"' EXIT
+ql_cleanup work rm -rf "$WORK"
 mkdir -p "$WORK/src" "$WORK/out/config"
 cp -p "$REPO"/quadlet/*.container "$REPO"/quadlet/*.volume "$REPO"/quadlet/*.network "$WORK/src/"
 RENDER_ARGS=()
