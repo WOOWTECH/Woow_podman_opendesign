@@ -171,7 +171,7 @@ rollback() {
   done
   # Whether or not a unit did it, the containers have to run again: the daemon before its front.
   for c in "${retired[@]}"; do
-    if podman container exists "$c" && ! app_running "$c"; then app_unlocked podman start "$c" >/dev/null; fi
+    if podman container exists "$c" && ! app_running "$c"; then podman start "$c" >/dev/null; fi
   done
   ql_wait_http "$(legacy_url)/api/health" '200' 300 \
     || ql_die "the legacy OpenDesign did not answer on $(legacy_url)/api/health after the rollback; check: podman logs $NGINX_CONTAINER"
