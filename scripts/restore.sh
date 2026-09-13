@@ -27,8 +27,7 @@ done
 archive=$(realpath -- "$archive")
 [[ -f $archive && -s $archive ]] || ql_die "archive not found or empty: $archive"
 ql_require_rootless
-app_lock
-
+ql_lock "$APP"
 sums=$(dirname -- "$archive")/SHA256SUMS
 if [[ -f $sums ]] && grep -q "  ${archive##*/}\$" "$sums"; then
   (cd "$(dirname -- "$archive")" && grep "  ${archive##*/}\$" SHA256SUMS | sha256sum -c --quiet -) \

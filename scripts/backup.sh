@@ -26,7 +26,7 @@ while (($#)); do
   shift
 done
 ql_require_rootless
-app_lock
+ql_lock "$APP"
 podman volume exists open-design_open_design_data || ql_die "volume open-design_open_design_data does not exist"
 
 dest=$(app_new_backup_dir backup)
@@ -35,12 +35,13 @@ if ((hot == 0)) && [[ $was_running == active ]]; then
   # nginx follows through BindsTo=, and comes back with the daemon.
   systemctl --user stop open-design.service
   start_again() { systemctl --user start open-design.service || ql_warn "could not start open-design.service again"; }
-  trap start_again EXIT
+  # a hook, not `trap ... EXIT`, which would replace the handler ql_lock armed
+  ql_cleanup restart start_again
 fi
 ql_backup_volume open-design_open_design_data "$dest" >/dev/null
 printf '%s\n' "$OD_VERSION" >"$dest/VERSION"
 if ((hot == 0)) && [[ $was_running == active ]]; then
-  trap - EXIT
+  ql_cleanup_clear restart
   start_again
   app_wait_healthy open-design 300 open-design.service
 fi
