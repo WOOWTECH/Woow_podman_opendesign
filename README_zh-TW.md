@@ -32,7 +32,7 @@
 > **憑證檢查在哪裡。** 上游的 `OD_API_TOKEN` 只對**非 loopback** 來源強制
 > （`apps/daemon/src/api-token-auth.ts`；桌面 UI 流程依賴此豁免）。nginx 永遠是從 loopback 連到 daemon，
 > 所以單靠 token 從來就保護不了 `:7456` — 包含會回傳供應商金鑰的 `/api/models-config`。因此現在由 nginx
-> 要求憑證（密碼就是同一個 token），而 `/api/health` 是唯一的豁免路徑。
+> 要求憑證（密碼就是同一個 token），豁免路徑只有 `/api/health` 和以專案 UUID 讀取專案檔案。
 
 ## 需求
 

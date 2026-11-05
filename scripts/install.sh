@@ -88,11 +88,15 @@ for f in "$WORK/out"/*; do
   [[ -z $u ]] || ql_check_unit_shadow "$u" "$APP"
 done
 
+image_rebuilt=0
 # ---- 5. image, then the registry images and the secrets ---------------------------------------
 if ((no_build)); then
   podman image exists "$OD_IMAGE" || [[ $dry == 1 ]] || ql_die "--no-build, but $OD_IMAGE is missing"
 elif ((rebuild)); then
+  image_before=$(podman image inspect --format '{{.Id}}' "$OD_IMAGE" 2>/dev/null || true)
   od_build_image --force
+  image_after=$(podman image inspect --format '{{.Id}}' "$OD_IMAGE" 2>/dev/null || true)
+  [[ $image_before == "$image_after" ]] || image_rebuilt=1
 else
   od_build_image
 fi
@@ -126,6 +130,12 @@ if [[ $dry == 1 ]]; then
 fi
 ((restart_daemon == 0)) || ql_mark_changed "$APP" open-design.service
 ((restart_nginx == 0)) || ql_mark_changed "$APP" open-design-nginx.service
+# The tag is the same after --rebuild, so no unit file changed; three containers run this image.
+if ((image_rebuilt)); then
+  for u in open-design.service open-design-mcp.service open-design-terminal.service; do
+    ql_mark_changed "$APP" "$u"
+  done
+fi
 if ((no_start)); then
   systemctl --user daemon-reload
   ql_info "installed; not started (--no-start). Start with: systemctl --user start open-design.service"

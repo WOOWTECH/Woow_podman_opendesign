@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.1.1 — 2026-11-05
+
+Fixes from a full test in a real Firefox.
+
+- **Security-relevant: reading a project's files no longer needs the password.** `GET` and `HEAD` of
+  `/api/projects/<uuid>/raw/` and `/preview/` are open to anyone who can reach the port and knows the
+  project's UUID. The UUID is not listed anywhere without signing in. Without this, a design with images
+  or a stylesheet asked for a second sign-in in Firefox, because a sandboxed preview has no Basic
+  credentials. `WOOW_OD_AUTH=off` is unaffected.
+- A design's asset that still arrives without credentials now fails quietly instead of opening a dialog,
+  and a thumbnail's relative asset loads the file instead of the app's HTML.
+- The web terminal accepts 4 tabs. A second tab used to show only "Press to Reconnect".
+- The MCP admin page no longer talks about Home Assistant, and no longer says tools are read-only by
+  default. All 15 are on by default.
+- `install.sh --rebuild` now restarts the containers when the image changed.
+- `tests/nginx-auth.sh` checks what nginx leaves open against the real nginx image, and CI runs it.
+
 ## 4.1.0 — 2026-11-05
 
 Phase 2 of aligning with the PaaS service and the Home Assistant add-on.

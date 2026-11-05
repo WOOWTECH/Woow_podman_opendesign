@@ -35,6 +35,8 @@ jobs:
 
       - name: Quadlet dry-run + systemd-analyze verify
         run: tests/dryrun.sh
+      - name: Credential boundary of nginx
+        run: tests/nginx-auth.sh
 
       - name: The per-app lock is given back by a script that ends normally
         run: tests/lock-release.sh
