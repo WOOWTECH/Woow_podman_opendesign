@@ -74,10 +74,15 @@ lint_local() {
   # The registry image is pinned by digest.
   unit_img=$(sed -n 's/^Image=//p' quadlet/open-design-nginx.container)
   [[ $unit_img == *@sha256:* ]] || fail "image not pinned by digest: $unit_img"
-  # The credential boundary: nginx checks credentials, /api/health is the only exemption, and the
-  # export bridge is still injected.
+  # The credential boundary: nginx checks credentials, the exemptions are /api/health and GET of a
+  # project's files by UUID, and the export bridge is still injected.
   grep -qF 'include /etc/nginx/woow-auth.conf;' config/nginx.conf || fail "config/nginx.conf lost the credential include"
   grep -qF 'auth_basic_user_file /etc/nginx/htpasswd;' config/nginx-auth.basic.conf || fail "the basic auth variant no longer asks for a password"
+  # shellcheck disable=SC2016 # literal nginx variable
+  grep -qF 'auth_basic $od_auth_realm;' config/nginx-auth.basic.conf || fail "the basic auth variant no longer uses the mapped realm"
+  grep -qF '"~^(GET|HEAD):/api/projects/[0-9a-f-]{36}/(raw|preview)/" off;' config/nginx.conf || fail "config/nginx.conf widened or lost the read-only file exemption"
+  # shellcheck disable=SC2016 # literal nginx variables
+  [[ $(grep -c ' off;$' <(sed -n '/map "$request_method:$uri"/,/^    }$/p' config/nginx.conf)) == 1 ]] || fail "config/nginx.conf has another realm exemption"
   # shellcheck disable=SC2016 # literal nginx variable
   grep -qF 'proxy_set_header Origin     $http_origin;' config/nginx.conf || fail "config/nginx.conf rewrites the Origin ttyd checks"
   grep -qF 'sub_filter' config/nginx.conf || fail "config/nginx.conf lost the export-bridge injection"

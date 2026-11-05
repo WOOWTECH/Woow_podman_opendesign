@@ -37,7 +37,7 @@ mounts nothing from your home directory except its own config files.
 > callers (`apps/daemon/src/api-token-auth.ts`; the desktop UI flow depends on the exemption). nginx
 > always reaches the daemon over loopback, so the token alone never protected `:7456` — including
 > `/api/models-config`, which returns provider keys. That is why nginx now asks for credentials, with
-> the same token as the password, and why `/api/health` is the only exemption.
+> the same token as the password, and why `/api/health` and reading a project's files by UUID are the only exemptions.
 
 ## Requirements
 

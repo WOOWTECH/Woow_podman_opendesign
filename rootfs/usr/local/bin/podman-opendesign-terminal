@@ -8,7 +8,8 @@ set -Eeuo pipefail
 # ttyd only listens on the namespace's loopback; nginx is its only client and adds
 # the credential check. --check-origin compares the browser's Origin with its Host,
 # so nginx must pass both through unchanged: a browser sends cached Basic credentials
-# on a cross-site WebSocket too, and this check is what refuses that.
+# on a cross-site WebSocket too, and this check is what refuses that. Each tab gets its own shell;
+# past the limit a tab shows only "Press to Reconnect", so a second tab must not hit it.
 readonly DATA_DIR=/app/.od
 
 export HOME="$DATA_DIR/home"
@@ -25,4 +26,4 @@ if [[ ! -d "$HOME" || -L "$HOME" ]]; then
 fi
 
 exec /usr/bin/ttyd --port 7681 --interface 127.0.0.1 --base-path /console \
-  --writable --check-origin --max-clients 1 --cwd "$HOME" /bin/bash --login
+  --writable --check-origin --max-clients 4 --cwd "$HOME" /bin/bash --login
