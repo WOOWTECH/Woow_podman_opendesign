@@ -47,7 +47,7 @@ mp=$(podman volume inspect --format '{{.Mountpoint}}' open-design_open_design_da
 podman unshare find "$mp" -mindepth 1 -delete
 podman volume import open-design_open_design_data "$archive" \
   || ql_die "podman volume import failed; the previous data is in $pre"
-od_repair_data_ownership
+od_repair_data_ownership open-design_open_design_data
 # The archive of the MCP state (token, tool policy) sits beside the data archive. An older backup has
 # none: the MCP state on this host then stays as it is.
 mcp_archive=$(find "$(dirname -- "$archive")" -maxdepth 1 -name 'open-design_mcp_data-*.tar' | sort | tail -n1)

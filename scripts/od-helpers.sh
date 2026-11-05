@@ -87,12 +87,12 @@ od_build_image() {
   ql_info "built $OD_IMAGE"
 }
 
-# od_repair_data_ownership [volume]: give every path in a volume back to the account that owns it. 3.0.0 ran its image build as root with HOME inside the volume path, so a volume it created
+# od_repair_data_ownership <volume>: give every path in a volume back to the account that owns it. 3.0.0 ran its image build as root with HOME inside the volume path, so a volume it created
 # got a root-owned home/ by copy-up; the daemon cannot chown it (there is no root under keep-id), and
 # the agents could not write their logins. A restore can bring the same paths back. In `podman
 # unshare` this account is uid 0. -xdev stays on this mount, and -h changes a symlink, not its target.
 od_repair_data_ownership() {
-  local volume=${1:-open-design_open_design_data} mp count
+  local volume=$1 mp count
   podman volume exists "$volume" || return 0
   mp=$(podman volume inspect --format '{{.Mountpoint}}' "$volume")
   [[ $mp == /* && $mp != / ]] || ql_die "unexpected mountpoint for $volume"
