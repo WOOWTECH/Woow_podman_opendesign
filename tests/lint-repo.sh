@@ -81,7 +81,8 @@ lint_local() {
   # shellcheck disable=SC2016 # literal nginx variable
   grep -qF 'auth_basic $od_auth_realm;' config/nginx-auth.basic.conf || fail "the basic auth variant no longer uses the mapped realm"
   grep -qF '"~^(GET|HEAD):/api/projects/[0-9a-f-]{36}/(raw|preview)/" off;' config/nginx.conf || fail "config/nginx.conf widened or lost the read-only file exemption"
-  [[ $(grep -c ' off;$' <(sed -n '/map "$request_method:$uri"/,/}/p' config/nginx.conf)) == 1 ]] || fail "config/nginx.conf has another realm exemption"
+  # shellcheck disable=SC2016 # literal nginx variables
+  [[ $(grep -c ' off;$' <(sed -n '/map "$request_method:$uri"/,/^    }$/p' config/nginx.conf)) == 1 ]] || fail "config/nginx.conf has another realm exemption"
   # shellcheck disable=SC2016 # literal nginx variable
   grep -qF 'proxy_set_header Origin     $http_origin;' config/nginx.conf || fail "config/nginx.conf rewrites the Origin ttyd checks"
   grep -qF 'sub_filter' config/nginx.conf || fail "config/nginx.conf lost the export-bridge injection"
