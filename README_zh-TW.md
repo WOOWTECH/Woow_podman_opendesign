@@ -1,14 +1,14 @@
 # Woow OpenDesign：rootless Podman（Quadlet + systemd）部署
 
 [![Podman](https://img.shields.io/badge/Podman-%E2%89%A54.9%20rootless-892CA0)](https://podman.io)
-[![OD](https://img.shields.io/badge/upstream-ghcr.io%2Fnexu--io%2Fod%200.21.1-blue)](https://github.com/nexu-io/od)
-[![OpenCode](https://img.shields.io/badge/opencode--ai-1.18.29-blue)](https://www.npmjs.com/package/opencode-ai)
+[![OD](https://img.shields.io/badge/OpenDesign-0.24.1-blue)](https://github.com/nexu-io/od)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [English](README.md) · **繁體中文**
 
-上游 Open Design（`ghcr.io/nexu-io/od`，以 digest 釘在 0.21.1）加上 headless 匯出管線（Chromium +
-Playwright + CJK 字型）與內建的 **OpenCode** agent，以 rootless Podman
+共用的 WoowTech OpenDesign core（`ghcr.io/woowtech/open-design-core`，以 digest 釘版：OpenDesign 0.24.1，
+與 PaaS 服務和 Home Assistant add-on 相同）加上 headless 匯出管線（Chromium + Playwright + CJK 字型）與
+四個內建 agent（**Claude Code、Codex、Pi、OpenCode**），以 rootless Podman
 [Quadlet](https://docs.podman.io/en/v4.9.3/markdown/podman-systemd.unit.5.html) 單元在 `systemd --user`
 下執行；前面有一個 **nginx** 負責 gzip、快取、SSE/WebSocket 轉發、PDF 匯出橋接，以及登入對話框。
 
@@ -25,9 +25,9 @@ Playwright + CJK 字型）與內建的 **OpenCode** agent，以 rootless Podman
 | **UI** | 預設 `http://127.0.0.1:7456`，由 nginx 單元提供。**預設啟用 Basic 認證**：使用者 `open-design`，密碼為產生的 API token。 |
 | **Daemon** | `open-design`（單元 `open-design.service`），本機建置的映像 `localhost/woow-open-design:<VERSION>`，在自己的網路 namespace 內監聽 `127.0.0.1:7457`。 |
 | **nginx 前端** | `open-design-nginx`（單元 `open-design-nginx.service`），釘版 `nginx:1.30.4-alpine`，加入 daemon 的 namespace（`Network=container:open-design`），隨 daemon 一起啟停。 |
-| **資料** | 單一 volume `open-design_open_design_data`（`/app/.od`）：專案、`app.sqlite` 以及位於 `$HOME=/app/.od/home` 的 OpenCode 憑證。 |
+| **資料** | 單一 volume `open-design_open_design_data`（`/app/.od`）：專案、`app.sqlite` 以及位於 `$HOME=/app/.od/home` 的 agent 登入資料。 |
 | **資源限制** | `PidsLimit` 512 / 128 與記憶體、CPU 限制現在真的生效。podman-compose 1.0.6 會默默忽略 `pids_limit`，所以 compose 部署其實跑在 2048 的預設值。 |
-| **Rootless** | `UserNS=keep-id:uid=1001,gid=1001`、唯讀根檔案系統、`NoNewPrivileges`，`/tmp` 與 `/home/open-design` 為 tmpfs。 |
+| **Rootless** | `UserNS=keep-id:uid=1001,gid=1001`、唯讀根檔案系統、`NoNewPrivileges`，`/tmp` 為 tmpfs。 |
 
 > **憑證檢查在哪裡。** 上游的 `OD_API_TOKEN` 只對**非 loopback** 來源強制
 > （`apps/daemon/src/api-token-auth.ts`；桌面 UI 流程依賴此豁免）。nginx 永遠是從 loopback 連到 daemon，
@@ -82,7 +82,7 @@ podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-to
 | `WOOW_OD_BIND` | `127.0.0.1` | UI 埠發布的位址；`all` 同時涵蓋 IPv4 與 IPv6。 |
 | `WOOW_OD_PORT` | `7456` | UI 的主機埠。 |
 | `WOOW_OD_AUTH` | `basic` | `off` 會關閉 nginx 的憑證檢查。除非 `WOOW_OD_BIND` 是 loopback，否則 `install.sh` 會拒絕：`/api/models-config` 會回傳你的供應商金鑰。只適用於前面已有認證代理或 SSH 通道的情境。 |
-| `WOOW_OD_MEMORY` / `WOOW_OD_CPUS` | `2g` / `2` | daemon 容器的限制。 |
+| `WOOW_OD_MEMORY` / `WOOW_OD_CPUS` | `4g` / `2` | daemon 容器的限制。 |
 | `WOOW_OD_BUILD_CPUS` | 空 | 映像建置的 `--cpuset-cpus`，例如 `0-2`。 |
 | `NODE_OPTIONS` | `--max-old-space-size=1536` | Node heap，需低於 `WOOW_OD_MEMORY`。 |
 | `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY` | 空 | 選用的 BYOK 金鑰，也可在 Models 頁面設定。 |
@@ -95,6 +95,19 @@ podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-to
 | `open-design-htpasswd` | nginx 檢查用的 apr1 雜湊，由該 token 推導（salt 為決定性值，token 沒變就不會變）。 |
 
 以 `scripts/install.sh --rotate-token` 同時輪替兩者。
+
+## 登入 agent
+
+登入資料存在資料 volume，重啟和升級後都還在。映像目前沒有網頁終端，請從主機登入：
+
+```bash
+podman exec -it open-design bash
+claude                     # 接著輸入 /login
+codex login --device-auth
+pi                         # 接著輸入 /login
+```
+
+OpenCode 的 API 模型在 OpenDesign 的 **Settings → API providers** 設定。備份內含這些登入資料，請比照密碼保管。
 
 ## 驗證
 
@@ -136,7 +149,7 @@ scripts/uninstall.sh --purge                  # 另外刪除它們（需輸入 "
 scripts/uninstall.sh --purge --purge-images   # 再移除本機建置的映像
 ```
 
-`--purge` 是唯一會刪除資料的指令，而且會同時刪掉你的專案**與** OpenCode 憑證（兩者在同一個 volume）。
+`--purge` 是唯一會刪除資料的指令，而且會同時刪掉你的專案**與** agent 登入資料（兩者在同一個 volume）。
 
 ## 從 podman-compose 部署遷移
 

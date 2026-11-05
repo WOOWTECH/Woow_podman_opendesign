@@ -7,14 +7,11 @@ import { renderSlides } from './headless-renderer.mjs';
 // loopback default is the security floor if it ever runs without one.
 const host = process.env.OD_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.OD_PORT) || 7457;
-// OpenDesign 0.21.1's startServer().shutdown() resolves immediately without
-// closing the HTTP server and leaves child processes and timers on the event
-// loop, so Node never exits on its own. Verified in the pinned base image:
-// `shutdown() resolved in 1 ms; server.listening = true` with three live
-// ProcessWrap handles still attached. The Home Assistant add-on hid this behind
-// its launcher's 5s TERM-to-KILL grace timer; with one process per container
-// that bound has to live here, or every pod deletion burns the whole
-// terminationGracePeriodSeconds and ends in SIGKILL (exit 137).
+// OpenDesign 0.24.1's startServer({ returnServer: true }).shutdown only stops
+// daemon runs; it neither closes the HTTP server nor ends background timers, so
+// the process must close the server itself and exit explicitly. With one process
+// per container the time bound has to live here too, or every stop burns the
+// whole stop timeout and ends in SIGKILL (exit 137).
 const SHUTDOWN_GRACE_MS = 10_000;
 let started;
 let stopping = false;
@@ -46,6 +43,10 @@ async function stop(signal) {
   }
 }
 
+function stopAndExit(signal) {
+  void stop(signal).finally(() => process.exit(process.exitCode ?? 0));
+}
+
 try {
   const { startServer } = await import('/app/apps/daemon/dist/server.js');
   started = await startServer({
@@ -57,15 +58,17 @@ try {
   });
   console.info(`[woow-opendesign] OpenDesign ${started.url} with Playwright export renderer`);
 
-  process.once('SIGTERM', () => void stop('SIGTERM'));
-  process.once('SIGINT', () => void stop('SIGINT'));
+  process.once('SIGTERM', () => stopAndExit('SIGTERM'));
+  process.once('SIGINT', () => stopAndExit('SIGINT'));
   await new Promise((resolve, reject) => {
     started.server.once('close', resolve);
     started.server.once('error', reject);
   });
+  // The server closed without a stop signal: a required process ended.
+  if (!stopping) process.exitCode = 1;
 } catch (error) {
   console.error('[woow-opendesign] failed to start', error);
   process.exitCode = 1;
 } finally {
-  await stop('exit');
+  if (!stopping) stopAndExit('exit');
 }

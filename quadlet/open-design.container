@@ -1,4 +1,4 @@
-# Woow OpenDesign daemon (upstream od 0.21.1 + headless export + OpenCode), rootless Quadlet.
+# Woow OpenDesign daemon (shared WoowTech core: OpenDesign 0.24.1, Claude Code, Codex, Pi, OpenCode; headless export), rootless Quadlet.
 #
 # Network layout: the daemon owns a private network namespace on open-design.network and still binds
 # only 127.0.0.1:7457 (its launcher forces OD_BIND_HOST). The nginx unit joins this namespace
@@ -15,7 +15,7 @@ Documentation=https://github.com/WOOWTECH/Woow_podman_opendesign
 [Container]
 ContainerName=open-design
 # Built from Dockerfile.full by scripts/install.sh; the tag is the repo VERSION file.
-Image=localhost/woow-open-design:3.0.0
+Image=localhost/woow-open-design:4.0.0
 Pull=never
 Network=open-design.network
 HostName=open-design
@@ -26,7 +26,6 @@ PublishPort=@@OD_PUBLISH@@:7456
 UserNS=keep-id:uid=1001,gid=1001
 ReadOnly=true
 Tmpfs=/tmp
-Tmpfs=/home/open-design:mode=1777
 Volume=open-design-data.volume:/app/.od
 NoNewPrivileges=true
 PidsLimit=512

@@ -1,5 +1,29 @@
 # Changelog
 
+## 4.0.0 — 2026-11-05 (BREAKING)
+
+Phase 1 of aligning with the PaaS service and the Home Assistant add-on.
+
+- **The image is now built on the shared WoowTech core** (`ghcr.io/woowtech/open-design-core`
+  `20261101.2319`, by digest), replacing upstream `ghcr.io/nexu-io/od:0.21.1`. OpenDesign goes from
+  0.21.1 to 0.24.1. The image grows from about 1 GB to about 5.8 GB and is amd64 only.
+- **Four agents:** Claude Code 2.1.296, Codex 0.162.1, Pi 1.1.0 and OpenCode 1.18.33 come from the
+  core. The last build step fails on any other version. Their logins and settings live in
+  `$HOME=/app/.od/home`, in the data volume.
+- **The export renderer and its helper tree are root-owned** and not writable by the agents' UID.
+- **Shutdown:** the daemon closes its server and exits explicitly, the fix the HA add-on carries for
+  0.24.1.
+- **Fix: `home/` in the data volume was not writable.** A volume created by 3.0.0 has a root-owned
+  `/app/.od/home`, left by the image build, so agents could not write their logins or settings.
+  `install.sh`, `upgrade.sh` and `restore.sh` now return such paths to the account that owns the
+  volume, and the image starts new volumes with an empty home.
+- **`WOOW_OD_MEMORY` now defaults to `4g`** (was `2g`). An existing env file keeps its value.
+- **Upgrading is one-way for data:** the daemon migrates `app.sqlite` forward, so going back to 3.0.0
+  needs the pre-upgrade archive that `scripts/upgrade.sh` takes.
+- CI builds the image, which runs the core contract.
+- Not in this release: the built-in MCP server, the Paseo and Omnigent setup and the web terminal.
+  Their plugin cards can appear in the UI, but those features are not wired up yet.
+
 ## 3.0.0 — 2026-09-12 (BREAKING)
 
 Quadlet + systemd is now the only deployment in this repo.

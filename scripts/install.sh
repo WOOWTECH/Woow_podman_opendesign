@@ -97,6 +97,7 @@ else
   od_build_image
 fi
 ql_pull_images "$WORK/out"
+od_repair_data_ownership
 restart_daemon=0 restart_nginx=0
 if ((rotate)); then
   ql_secret_ensure open-design-api-token random:64 --replace

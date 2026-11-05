@@ -1,91 +1,64 @@
-# Woow OpenDesign for rootless podman.
+# Woow OpenDesign for rootless podman: the shared WoowTech OpenDesign core (the image the PaaS
+# service and the HA add-on are built on) plus this repo's thin shell: the launcher, the headless
+# export renderer and the /app/.od data layout.
 #
-# Aligned with the Home Assistant add-on and the k3s chart: same pinned upstream
-# base, same OpenCode build, same headless Playwright export pipeline. The point
-# of the alignment is that this stack runs STANDALONE — it no longer borrows a
-# coding agent, credentials or a HOME from the host.
-#
-# Removed in this rewrite, deliberately:
-#   * Pi (@earendil-works/pi-coding-agent) and the pi-od HOME-scoping wrapper.
-#     Pi was here because the upstream image ships no agent binary and pi-web
-#     was the neighbouring deployment. OpenCode is now baked in instead, so the
-#     shared /data/pi-agent volume and PI_* wiring are gone.
-#   * `FROM ghcr.io/nexu-io/od:latest`. Unpinned, it resolved to 0.20.3 at build
-#     time, whose daemon has no headless renderer at all — which is why every
-#     image/pptx/pdf export on the live host returned 501 even though this file
-#     already installed Chromium and Playwright. The digest below is the same
-#     one the k3s chart and the HA add-on pin.
-#   * `COPY deploy/pi-od`. There is no deploy/ directory in this repo, so the
-#     committed Dockerfile could not build at all; the running image was built
-#     from a layout that no longer exists.
-ARG BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
+# The core provides OpenDesign 0.24.1, Claude Code, Codex, Pi, OpenCode, Chromium and the CJK fonts.
+# amd64 only: the core is built for linux/amd64.
+ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261101.2319@sha256:a3d1e6ce84774d11e03a31b379be438b5f53fe832ddd4b72d31fc837462bbd62
 FROM ${BUILD_FROM}
+
+# Versions the core must provide; the contract below fails the build on any mismatch.
+# OpenDesign 0.24.1 ships its daemon as package version 0.23.1.
+ARG CORE_OPENDESIGN_VERSION=0.24.1
+ARG CORE_DAEMON_PACKAGE_VERSION=0.23.1
+ARG CORE_CLAUDE_CODE_VERSION=2.1.296
+ARG CORE_CODEX_VERSION=0.162.1
+ARG CORE_PI_VERSION=1.1.0
+ARG CORE_OPENCODE_VERSION=1.18.33
 
 USER root
 
-# OD_PORT is the loopback daemon; the nginx sidecar owns the public 7456.
-# HOME points into the data volume so OpenCode's BYOK credentials survive a
-# restart — /home/open-design is a tmpfs in this stack.
-ENV NODE_ENV=production \
-    OD_BIND_HOST=127.0.0.1 \
+# The core's defaults target the PaaS chart (HOME=/home/opendesign). Here everything stateful lives
+# in the one data volume, /app/.od.
+ENV OD_BIND_HOST=127.0.0.1 \
     OD_PORT=7457 \
     OD_DATA_DIR=/app/.od \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
-    HOME=/app/.od/home \
-    PATH=/opt/woow-opendesign/opencode/node_modules/.bin:${PATH}
-
-# Chromium comes from Alpine rather than a first-boot download; playwright-core
-# is locked separately in runtime/package-lock.json. The CJK and emoji fonts are
-# what keep Traditional Chinese and colour emoji out of the tofu box in exported
-# PDF/PPTX/PNG. su-exec is NOT installed: this stack never starts as root.
-RUN apk add --no-cache \
-      bash \
-      chromium \
-      font-noto-cjk \
-      font-noto-emoji \
-      fontconfig \
-      curl \
-    && fc-cache -f \
-    && rm -rf /var/cache/apk/*
-
-RUN mkdir -p /app/.od /home/open-design \
-    && chown -R open-design:open-design /app/.od /home/open-design
+    HOME=/app/.od/home
 
 COPY runtime/package.json runtime/package-lock.json /opt/woow-opendesign/
-COPY runtime/opencode/package.json runtime/opencode/package-lock.json /opt/woow-opendesign/opencode/
 # Absolute npm path: a build frontend may supply a reduced PATH.
 RUN /usr/local/bin/npm ci --omit=dev --prefix /opt/woow-opendesign \
-    && /usr/local/bin/npm ci --omit=dev --prefix /opt/woow-opendesign/opencode \
-    && /usr/local/bin/npm cache clean --force \
-    && chown -R open-design:open-design /opt/woow-opendesign
+    && /usr/local/bin/npm cache clean --force
 
 COPY rootfs/ /
-RUN chmod 0755 \
+# Tools that resolve the passwd home instead of $HOME (OpenCode keeps its cache, data and state
+# there) must land in the data volume too, not on the read-only root filesystem.
+# Root-owned and not writable by UID 1001: the agents run as that UID, and the export renderer runs
+# in the daemon that serves their results.
+RUN set -eu; \
+    # The npm run above used this HOME as root. A new volume is copied from here, so nothing of that
+    # run may stay: the volume must start with an empty home owned by the runtime user.
+    rm -rf /app/.od/home; \
+    mkdir -p /app/.od/home; \
+    chown -R open-design:open-design /app/.od; \
+    awk -F: 'BEGIN{OFS=":"} $1=="open-design"{$6="/app/.od/home"} {print}' /etc/passwd > /tmp/passwd; \
+    cat /tmp/passwd > /etc/passwd; \
+    rm -f /tmp/passwd; \
+    test "$(getent passwd open-design | cut -d: -f6)" = /app/.od/home; \
+    chmod 0755 \
       /usr/local/bin/podman-opendesign \
       /opt/woow-opendesign/headless-entry.mjs \
-      /opt/woow-opendesign/headless-renderer.mjs \
-    && chown open-design:open-design \
-      /opt/woow-opendesign/headless-entry.mjs \
-      /opt/woow-opendesign/headless-renderer.mjs
+      /opt/woow-opendesign/headless-renderer.mjs; \
+    chown -R root:root /opt/woow-opendesign; \
+    chmod -R go-w /opt/woow-opendesign
 
-# Build-time proof, so a broken image fails here instead of at 03:00 in prod.
-RUN test "$(id -u open-design)" = "1001" \
-    && test -x /usr/local/bin/node \
-    && test "$(su open-design -s /bin/sh -c 'opencode --version')" = "1.18.29" \
-    && command -v chromium-browser \
-    && command -v bash \
-    && test ! -e /usr/local/bin/pi \
-    && test ! -e /usr/local/bin/pi-od \
-    && node -e "import('/opt/woow-opendesign/headless-renderer.mjs').then(m=>{if(typeof m.renderSlides!=='function')throw new Error('renderSlides missing');console.log('renderSlides ok')})"
-
-ARG BUILD_VERSION=3.0.0
+ARG BUILD_VERSION=4.0.0
 ARG BUILD_DATE
 ARG BUILD_REF
 ARG BUILD_REPOSITORY=WOOWTECH/Woow_podman_opendesign
 
 LABEL org.opencontainers.image.title="Woow Podman OpenDesign" \
-      org.opencontainers.image.description="OpenDesign for rootless podman, aligned with the HA add-on" \
+      org.opencontainers.image.description="OpenDesign for rootless podman, on the shared WoowTech core" \
       org.opencontainers.image.vendor="WOOWTECH" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/${BUILD_REPOSITORY}" \
@@ -95,4 +68,26 @@ LABEL org.opencontainers.image.title="Woow Podman OpenDesign" \
 
 # Under keep-id the container already runs as 1001; there is no root to drop.
 USER open-design
+
+# Core contract, as the runtime user, so a broken image fails here instead of at 03:00 in prod.
+RUN set -eu; \
+    test "$(id -u)" = 1001; \
+    test -f /app/apps/daemon/dist/server.js; \
+    test -d /app/apps/web/out; \
+    grep -Fq "\"version\": \"${CORE_DAEMON_PACKAGE_VERSION}\"" /app/apps/daemon/package.json; \
+    test "$OD_APP_VERSION" = "$CORE_OPENDESIGN_VERSION"; \
+    test -f /app/skills/woowtech-brand/SKILL.md; \
+    test ! -e /app/skills/brainstorming; \
+    test "$(claude --version | awk '{print $1}')" = "$CORE_CLAUDE_CODE_VERSION"; \
+    test "$(codex --version | awk '{print $2}')" = "$CORE_CODEX_VERSION"; \
+    test "$(pi --version | tr -d '[:space:]')" = "$CORE_PI_VERSION"; \
+    test "$(opencode --version | tr -d '[:space:]')" = "$CORE_OPENCODE_VERSION"; \
+    for b in bash node npm chromium-browser curl tini; do \
+      command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
+    done; \
+    fc-list | grep -qi 'Noto Sans CJK'; \
+    test ! -w /opt/woow-opendesign; \
+    node -e "import('/opt/woow-opendesign/headless-renderer.mjs').then(m=>{if(typeof m.renderSlides!=='function')throw new Error('renderSlides missing');console.log('renderSlides ok')})"
+
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/podman-opendesign"]
+CMD []
