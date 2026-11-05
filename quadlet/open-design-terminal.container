@@ -36,4 +36,5 @@ TimeoutStopSec=30
 
 [Install]
 # Comes back whenever the daemon starts; backup.sh and restore.sh stop and start only the daemon.
+WantedBy=default.target
 WantedBy=open-design.service

@@ -78,7 +78,7 @@ lint_local() {
   # export bridge is still injected.
   grep -qF 'include /etc/nginx/woow-auth.conf;' config/nginx.conf || fail "config/nginx.conf lost the credential include"
   grep -qF 'auth_basic_user_file /etc/nginx/htpasswd;' config/nginx-auth.basic.conf || fail "the basic auth variant no longer asks for a password"
-  grep -qF 'proxy_set_header Origin $http_origin;' config/nginx.conf || fail "config/nginx.conf rewrites the Origin ttyd checks"
+  grep -qF 'proxy_set_header Origin     $http_origin;' config/nginx.conf || fail "config/nginx.conf rewrites the Origin ttyd checks"
   grep -qF 'sub_filter' config/nginx.conf || fail "config/nginx.conf lost the export-bridge injection"
   grep -qxF 'WOOW_OD_AUTH=basic' config/open-design.env.example || fail "the shipped default is no longer WOOW_OD_AUTH=basic"
   # The daemon keeps its loopback bind and the limits podman-compose dropped.
