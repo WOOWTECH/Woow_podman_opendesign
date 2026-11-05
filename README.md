@@ -103,8 +103,9 @@ Rotate both with `scripts/install.sh --rotate-token`.
 
 ## Sign in to the agents
 
-The login files live in the data volume, so they survive restarts and upgrades. The image has no web
-terminal yet, so log in from the host:
+The login files live in the data volume, so they survive restarts and upgrades. Log in from the web
+terminal at `/console/` (the same sign-in as the UI; it is a real shell, so treat that password
+accordingly), or from the host:
 
 ```bash
 podman exec -it open-design bash
@@ -115,6 +116,22 @@ pi                         # then /login
 
 OpenCode API models are configured in OpenDesign under **Settings → API providers**. Backups contain
 these logins: protect them like passwords.
+
+## MCP server
+
+The built-in server has the same 15 tools as the PaaS service and the Home Assistant add-on, all on by
+default. `create_project` and `send_message` start agent runs, which use that agent's account, and
+`delete_project` deletes projects. Turn off what you do not want at `/mcp-admin/`, where you also
+reveal, rotate or revoke the token.
+
+```
+URL     http://127.0.0.1:7456/mcp
+Header  Authorization: Bearer <token>
+```
+
+Port 8081 is not published: clients go through nginx on `WOOW_OD_PORT`, so the server is reachable
+exactly as far as `WOOW_OD_BIND` allows. A backup contains the token; rotate it after restoring onto
+another host.
 
 ## Verify
 

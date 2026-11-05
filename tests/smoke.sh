@@ -44,12 +44,12 @@ host=$(app_local_host "$bind")
 url=http://$host:$port
 
 # A1 units
-for u in open-design.service open-design-nginx.service; do
+for u in open-design.service open-design-nginx.service open-design-mcp.service open-design-terminal.service; do
   if systemctl --user is-active --quiet "$u"; then pass "A1 $u is active"; else fail "A1 $u is not active"; fi
 done
 
 # A2 health of both containers (podman's health timer runs under Quadlet)
-for c in open-design open-design-nginx; do
+for c in open-design open-design-nginx open-design-mcp open-design-terminal; do
   if ql_wait_container_healthy "$c" 300 2>/dev/null; then pass "A2 $c is healthy"; else fail "A2 $c is not healthy"; fi
 done
 
@@ -183,6 +183,34 @@ if [[ -n $token && $(podman inspect open-design 2>/dev/null || true) == *"$token
   warn "A13 podman inspect shows the env-type token of the daemon (podman behaviour)"
 fi
 unset token
+
+# A14 the built-in MCP server: the gateway refuses a missing token, the admin page needs the sign-in,
+# and neither the daemon nor the terminal can reach its sockets or its state
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 -X POST -H 'Content-Type: application/json' --data '{}' "$url/mcp" || true)
+if [[ $code == 401 ]]; then pass "A14 /mcp without a token returns 401"; else fail "A14 /mcp without a token returned $code"; fi
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 -K "$TMP/curlrc" "$url/mcp-admin/" || true)
+if [[ $code == 200 ]]; then pass "A14 /mcp-admin/ with the sign-in returns 200"; else fail "A14 /mcp-admin/ with the sign-in returned $code"; fi
+for c in open-design open-design-terminal; do
+  if podman exec "$c" sh -c 'test -e /run/od-mcp/admin.sock || test -e /data/mcp/state' >/dev/null 2>&1; then
+    fail "A14 $c can see the MCP sockets or state"
+  else
+    pass "A14 $c cannot see the MCP sockets or state"
+  fi
+done
+
+# A15 the web terminal: behind the sign-in, and it refuses a cross-site WebSocket even with the sign-in
+ws=(-H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: c21va2Utd29vdy10ZXN0IQ==' -H 'Sec-WebSocket-Protocol: tty')
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 -K "$TMP/curlrc" "$url/console/" || true)
+if [[ $code == 200 ]]; then pass "A15 /console/ with the sign-in returns 200"; else fail "A15 /console/ with the sign-in returned $code"; fi
+if [[ $auth == basic ]]; then
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "$url/console/" || true)
+  if [[ $code == 401 ]]; then pass "A15 /console/ without credentials returns 401"; else fail "A15 /console/ without credentials returned $code"; fi
+fi
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 5 -K "$TMP/curlrc" "${ws[@]}" -H 'Origin: http://evil.example' "$url/console/ws" || true)
+if [[ $code != 101 ]]; then pass "A15 a foreign Origin cannot open the terminal WebSocket ($code)"; else fail "A15 a foreign Origin opened the terminal WebSocket"; fi
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 5 -K "$TMP/curlrc" "${ws[@]}" -H "Origin: $url" "$url/console/ws" || true)
+if [[ $code == 101 ]]; then pass "A15 the local Origin opens the terminal WebSocket"; else fail "A15 the local Origin got $code on the terminal WebSocket"; fi
+if podman exec open-design-terminal sh -c 'test -z "${OD_API_TOKEN:-}"' >/dev/null 2>&1; then pass "A15 the terminal has no API token"; else fail "A15 the terminal has the API token"; fi
 
 printf '%s passed, %s failed, %s warnings\n' "$npass" "$nfail" "$nwarn"
 ((nfail == 0))

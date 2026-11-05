@@ -46,7 +46,8 @@ fi
 ql_warn "upgrade failed; rolling back to the units saved in $snap/units"
 app_snapshot_restore "$snap/units" || ql_die "rollback failed: no usable snapshot. Inspect $snap and journalctl --user -u open-design.service"
 systemctl --user restart open-design.service || true
-if ql_wait_container_healthy open-design 300 && "$REPO/tests/smoke.sh" --quick; then
+# Not tests/smoke.sh: this checkout's smoke test describes the new version, which may have other units.
+if ql_wait_container_healthy open-design 300 && ql_wait_container_healthy open-design-nginx 120; then
   ql_die "upgrade failed and was rolled back; the previous version is running again"
 fi
 ql_die "upgrade failed and the rollback is unhealthy too. Restore data with: scripts/restore.sh --archive ${data:-<backup>} --confirm-restore $APP"

@@ -1,0 +1,8 @@
+# admin.sock of the built-in MCP server. Mounted only by open-design-mcp and nginx: mounting it is
+# the access control (the socket is 0666), so the daemon, the agents and the terminal never get it.
+[Unit]
+Description=Woow OpenDesign MCP sockets
+
+[Volume]
+VolumeName=open-design_mcp_run
+Label=io.woowtech.stack=open-design

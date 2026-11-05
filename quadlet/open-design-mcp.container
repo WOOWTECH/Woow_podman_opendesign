@@ -1,0 +1,44 @@
+# Built-in OpenDesign MCP server, the same runtime as the PaaS service and the HA add-on (mcp-runtime/).
+#
+# Its own container, so it has its own uid (10001, never the daemon's 1001), limits and restarts. It joins
+# the daemon's network namespace and listens on 127.0.0.1:8081 there; nothing publishes that port. Clients
+# reach it through nginx: /mcp (Bearer), /private_<token>/mcp and /mcp-admin/ (Basic auth).
+[Unit]
+Description=Woow OpenDesign MCP server
+Documentation=https://github.com/WOOWTECH/Woow_podman_opendesign
+BindsTo=open-design.service
+After=open-design.service
+
+[Container]
+ContainerName=open-design-mcp
+Image=localhost/woow-open-design:4.1.0
+Pull=never
+Network=container:open-design
+Label=io.woowtech.stack=open-design
+User=10001:10001
+UserNS=keep-id:uid=10001,gid=10001
+ReadOnly=true
+Tmpfs=/tmp
+Volume=open-design-mcp-data.volume:/data/mcp
+Volume=open-design-mcp-run.volume:/run/od-mcp
+NoNewPrivileges=true
+PidsLimit=128
+PodmanArgs=--memory=320m --cpus=0.5 --entrypoint=/opt/woow/bin/paas-opendesign-mcp
+Environment=WOOW_OD_BACKEND_URL=http://127.0.0.1:7457
+Environment=WOOW_OD_MCP_PORT=8081
+Environment=WOOW_OD_MCP_PUBLIC_ORIGIN=http://127.0.0.1:7456
+HealthCmd=/usr/bin/curl -fsS -o /dev/null http://127.0.0.1:8081/health/ready
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=5
+HealthStartPeriod=30s
+
+[Service]
+SuccessExitStatus=143
+Restart=always
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+[Install]
+# Comes back whenever the daemon starts; backup.sh and restore.sh stop and start only the daemon.
+WantedBy=open-design.service

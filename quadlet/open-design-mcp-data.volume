@@ -1,0 +1,8 @@
+# Token and tool policy of the built-in MCP server. Mounted only by open-design-mcp, so the daemon
+# and the agents cannot read the token.
+[Unit]
+Description=Woow OpenDesign MCP state
+
+[Volume]
+VolumeName=open-design_mcp_data
+Label=io.woowtech.stack=open-design

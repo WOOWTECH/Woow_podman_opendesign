@@ -11,7 +11,8 @@ ENV_EXAMPLE=$REPO/config/$APP.env.example
 ENV_FILE=$HOME/.config/$APP/$APP.env
 BACKUP_ROOT=$HOME/.local/share/woow-backups/$APP
 # container:unit pairs the units create (legacy-collision guard)
-CONTAINERS=("open-design:open-design.service" "open-design-nginx:open-design-nginx.service")
+CONTAINERS=("open-design:open-design.service" "open-design-nginx:open-design-nginx.service"
+  "open-design-mcp:open-design-mcp.service" "open-design-terminal:open-design-terminal.service")
 # env keys allowed to carry user-supplied credentials (ERE on the whole key; empty = none)
 ENV_CREDENTIAL_ALLOW='(DEEPSEEK|ANTHROPIC|OPENAI)_API_KEY'
 # the local image: one tag per repo VERSION, so an upgrade keeps the previous image for rollback
@@ -164,13 +165,18 @@ app_snapshot() {
 # app_snapshot_restore <dir>: put the snapshot back (files and manifest), remove files that a failed
 # run added, daemon-reload. Returns 1 when there is nothing to restore.
 app_snapshot_restore() {
-  local dir=$1 mf p
+  local dir=$1 mf p u
   mf="$(app_state_dir)/manifest"
   [[ -f $dir/manifest && -f $dir/files.tar ]] || { ql_warn "no snapshot in $dir"; return 1; }
   if [[ -f $mf ]]; then
     while read -r _ p; do
       [[ -n $p ]] || continue
-      grep -qxF -- "$p" "$dir/files.list" || rm -f -- "$p"
+      grep -qxF -- "$p" "$dir/files.list" && continue
+      # A unit the failed run added must stop while its file still exists: a sidecar left running in
+      # the daemon's network namespace keeps the daemon's container from being replaced.
+      u=$(ql_unit_for "$p")
+      [[ -z $u ]] || systemctl --user stop "$u" >/dev/null 2>&1 || true
+      rm -f -- "$p"
     done <"$mf"
   fi
   tar -xPf "$dir/files.tar" || return 1

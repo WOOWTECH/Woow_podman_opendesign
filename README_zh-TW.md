@@ -98,7 +98,7 @@ podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-to
 
 ## 登入 agent
 
-登入資料存在資料 volume，重啟和升級後都還在。映像目前沒有網頁終端，請從主機登入：
+登入資料存在資料 volume，重啟和升級後都還在。請從網頁終端 `/console/` 登入（與 UI 相同的帳密；它是真正的 shell，請謹慎保管密碼），或從主機登入：
 
 ```bash
 podman exec -it open-design bash
@@ -108,6 +108,20 @@ pi                         # 接著輸入 /login
 ```
 
 OpenCode 的 API 模型在 OpenDesign 的 **Settings → API providers** 設定。備份內含這些登入資料，請比照密碼保管。
+
+## MCP 伺服器
+
+內建伺服器有 15 個工具，與 PaaS 服務和 Home Assistant add-on 相同，預設全部開啟。`create_project` 和
+`send_message` 會啟動 agent 執行，消耗該 agent 帳號的額度；`delete_project` 會刪除專案。不要的工具請到
+`/mcp-admin/` 關閉，token 也在那裡顯示、輪換或撤銷。
+
+```
+網址    http://127.0.0.1:7456/mcp
+Header  Authorization: Bearer <token>
+```
+
+連接埠 8081 沒有發佈：用戶端經由 `WOOW_OD_PORT` 上的 nginx 連線，所以可連範圍就是 `WOOW_OD_BIND` 允許的範圍。
+備份內含 token，還原到別台主機後請輪換。
 
 ## 驗證
 

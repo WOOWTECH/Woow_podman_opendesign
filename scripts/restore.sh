@@ -48,6 +48,18 @@ podman unshare find "$mp" -mindepth 1 -delete
 podman volume import open-design_open_design_data "$archive" \
   || ql_die "podman volume import failed; the previous data is in $pre"
 od_repair_data_ownership
+# The archive of the MCP state (token, tool policy) sits beside the data archive. An older backup has
+# none: the MCP state on this host then stays as it is.
+mcp_archive=$(find "$(dirname -- "$archive")" -maxdepth 1 -name 'open-design_mcp_data-*.tar' | sort | tail -n1)
+if [[ -n $mcp_archive ]] && podman volume exists open-design_mcp_data; then
+  mp=$(podman volume inspect --format '{{.Mountpoint}}' open-design_mcp_data)
+  [[ $mp == /* && $mp != / ]] || ql_die "unexpected mountpoint for open-design_mcp_data"
+  ql_backup_volume open-design_mcp_data "$pre" >/dev/null
+  podman unshare find "$mp" -mindepth 1 -delete
+  podman volume import open-design_mcp_data "$mcp_archive" \
+    || ql_die "podman volume import failed for the MCP state; the previous state is in $pre"
+  od_repair_data_ownership open-design_mcp_data
+fi
 systemctl --user start open-design.service
 app_wait_healthy open-design 300 open-design.service
 "$REPO/tests/smoke.sh" --quick || ql_die "restored, but the quick smoke check failed"
