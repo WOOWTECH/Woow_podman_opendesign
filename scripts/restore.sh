@@ -12,6 +12,8 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 . "$REPO/scripts/lib/quadlet-lib.sh"
 # shellcheck source=common.sh
 . "$REPO/scripts/common.sh"
+# shellcheck source=od-helpers.sh
+. "$REPO/scripts/od-helpers.sh"
 
 archive='' confirm=''
 while (($#)); do
@@ -45,6 +47,7 @@ mp=$(podman volume inspect --format '{{.Mountpoint}}' open-design_open_design_da
 podman unshare find "$mp" -mindepth 1 -delete
 podman volume import open-design_open_design_data "$archive" \
   || ql_die "podman volume import failed; the previous data is in $pre"
+od_repair_data_ownership
 systemctl --user start open-design.service
 app_wait_healthy open-design 300 open-design.service
 "$REPO/tests/smoke.sh" --quick || ql_die "restored, but the quick smoke check failed"

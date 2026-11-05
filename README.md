@@ -1,15 +1,15 @@
 # Woow OpenDesign on rootless Podman (Quadlet + systemd)
 
 [![Podman](https://img.shields.io/badge/Podman-%E2%89%A54.9%20rootless-892CA0)](https://podman.io)
-[![OD](https://img.shields.io/badge/upstream-ghcr.io%2Fnexu--io%2Fod%200.21.1-blue)](https://github.com/nexu-io/od)
-[![OpenCode](https://img.shields.io/badge/opencode--ai-1.18.29-blue)](https://www.npmjs.com/package/opencode-ai)
+[![OD](https://img.shields.io/badge/OpenDesign-0.24.1-blue)](https://github.com/nexu-io/od)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **English** · [繁體中文](README_zh-TW.md)
 
-Upstream Open Design (`ghcr.io/nexu-io/od`, pinned by digest at 0.21.1) with a headless export
-pipeline (Chromium + Playwright + CJK fonts) and the **OpenCode** agent baked in, running as rootless
-Podman [Quadlet](https://docs.podman.io/en/v4.9.3/markdown/podman-systemd.unit.5.html) units under
+The shared WoowTech OpenDesign core (`ghcr.io/woowtech/open-design-core`, pinned by digest: OpenDesign
+0.24.1, the same core as the PaaS service and the Home Assistant add-on) with a headless export pipeline
+(Chromium + Playwright + CJK fonts) and four agents baked in (**Claude Code, Codex, Pi, OpenCode**),
+running as rootless Podman [Quadlet](https://docs.podman.io/en/v4.9.3/markdown/podman-systemd.unit.5.html) units under
 `systemd --user`, with an **nginx front** for gzip, caching, SSE/WebSocket passthrough, the PDF export
 bridge — and the sign-in dialog.
 
@@ -29,9 +29,9 @@ mounts nothing from your home directory except its own config files.
 | **UI** | `http://127.0.0.1:7456` by default, served by the nginx unit. **Basic auth is on by default**: user `open-design`, password = the generated API token. |
 | **Daemon** | `open-design` (unit `open-design.service`), a locally built image `localhost/woow-open-design:<VERSION>`, listening on `127.0.0.1:7457` inside its own network namespace. |
 | **nginx front** | `open-design-nginx` (unit `open-design-nginx.service`), pinned `nginx:1.30.4-alpine`, joins the daemon's namespace (`Network=container:open-design`). It stops and starts with the daemon. |
-| **Data** | one volume, `open-design_open_design_data` (`/app/.od`): projects, `app.sqlite` and the OpenCode credentials in `$HOME=/app/.od/home`. |
+| **Data** | one volume, `open-design_open_design_data` (`/app/.od`): projects, `app.sqlite` and the agent logins in `$HOME=/app/.od/home`. |
 | **Limits** | `PidsLimit` 512 / 128 and memory + CPU limits are really applied now. podman-compose 1.0.6 silently dropped `pids_limit`, so the compose deployment ran with the 2048 default. |
-| **Rootless** | `UserNS=keep-id:uid=1001,gid=1001`, read-only root filesystem, `NoNewPrivileges`, tmpfs for `/tmp` and `/home/open-design`. |
+| **Rootless** | `UserNS=keep-id:uid=1001,gid=1001`, read-only root filesystem, `NoNewPrivileges`, tmpfs for `/tmp`. |
 
 > **Where the credential check lives.** Upstream's `OD_API_TOKEN` is only enforced for **non-loopback**
 > callers (`apps/daemon/src/api-token-auth.ts`; the desktop UI flow depends on the exemption). nginx
@@ -87,7 +87,7 @@ a unit, so the installer tracks its hash and restarts the daemon when the file c
 | `WOOW_OD_BIND` | `127.0.0.1` | Address the UI port is published on; `all` covers IPv4 and IPv6. |
 | `WOOW_OD_PORT` | `7456` | Host port for the UI. |
 | `WOOW_OD_AUTH` | `basic` | `off` disables the nginx credential check. `install.sh` refuses it unless `WOOW_OD_BIND` is loopback: `/api/models-config` returns your provider keys. Use it only behind an authenticating proxy or an SSH tunnel. |
-| `WOOW_OD_MEMORY` / `WOOW_OD_CPUS` | `2g` / `2` | Limits for the daemon container. |
+| `WOOW_OD_MEMORY` / `WOOW_OD_CPUS` | `4g` / `2` | Limits for the daemon container. |
 | `WOOW_OD_BUILD_CPUS` | empty | `--cpuset-cpus` for the image build, e.g. `0-2`. |
 | `NODE_OPTIONS` | `--max-old-space-size=1536` | Node heap; keep it below `WOOW_OD_MEMORY`. |
 | `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | empty | Optional BYOK keys; they can also be set on the Models page. |
@@ -100,6 +100,21 @@ a unit, so the installer tracks its hash and restarts the daemon when the file c
 | `open-design-htpasswd` | The apr1 hash nginx checks, derived from that token (deterministic salt, so an unchanged token changes nothing). |
 
 Rotate both with `scripts/install.sh --rotate-token`.
+
+## Sign in to the agents
+
+The login files live in the data volume, so they survive restarts and upgrades. The image has no web
+terminal yet, so log in from the host:
+
+```bash
+podman exec -it open-design bash
+claude                     # then /login
+codex login --device-auth
+pi                         # then /login
+```
+
+OpenCode API models are configured in OpenDesign under **Settings → API providers**. Backups contain
+these logins: protect them like passwords.
 
 ## Verify
 
@@ -143,7 +158,7 @@ scripts/uninstall.sh --purge                  # also delete them, after a final 
 scripts/uninstall.sh --purge --purge-images   # and remove the locally built images
 ```
 
-`--purge` is the only command that deletes data, and it deletes your projects **and** the OpenCode
+`--purge` is the only command that deletes data, and it deletes your projects **and** the agent
 credentials, which share the one volume.
 
 ## Migrating a podman-compose deployment

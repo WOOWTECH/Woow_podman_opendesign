@@ -93,11 +93,13 @@ if podman exec open-design sh -c 'touch /woow-smoke-readonly' >/dev/null 2>&1; t
 else
   pass "A6 the root filesystem is read-only"
 fi
-if podman exec open-design sh -c 'touch /app/.od/.woow-smoke && rm -f /app/.od/.woow-smoke' >/dev/null 2>&1; then
-  pass "A6 /app/.od is writable"
-else
-  fail "A6 /app/.od is not writable"
-fi
+for dir in /app/.od /app/.od/home; do
+  if podman exec open-design sh -c "touch $dir/.woow-smoke && rm -f $dir/.woow-smoke" >/dev/null 2>&1; then
+    pass "A6 $dir is writable"
+  else
+    fail "A6 $dir is not writable"
+  fi
+done
 mp=$(podman volume inspect --format '{{.Mountpoint}}' open-design_open_design_data 2>/dev/null || true)
 owner=$(stat -c %U "$mp" 2>/dev/null || true)
 if [[ $owner == "$(id -un)" ]]; then pass "A6 the data volume is owned by $owner on the host (keep-id)"; else fail "A6 the data volume is owned by '${owner:-?}'"; fi
@@ -137,11 +139,15 @@ if grep -q '<script src="/od-export-bridge.js"></script>' <<<"$body"; then pass 
 ctype=$(curl -s -o /dev/null -w '%{content_type}' -m 15 -K "$TMP/curlrc" "$url/od-export-bridge.js" || true)
 if [[ $ctype == application/javascript* ]]; then pass "A9 /od-export-bridge.js is served as JavaScript"; else fail "A9 /od-export-bridge.js content type is '${ctype:-none}'"; fi
 
-# A10 the headless renderer and the bundled agent (README claims)
+# A10 the headless renderer and the four bundled agents (README claims)
 ver=$(curl -s -m 15 -K "$TMP/curlrc" "$url/api/version" || true)
 if grep -q '"slideRenderer" *: *true' <<<"$ver"; then pass "A10 /api/version reports the slide renderer"; else warn "A10 /api/version does not report slideRenderer: true"; fi
-agents=$(curl -s -m 15 -K "$TMP/curlrc" "$url/api/agents" || true)
-if grep -q 'opencode' <<<"$agents"; then pass "A10 /api/agents lists opencode"; else warn "A10 /api/agents does not list opencode"; fi
+# The first call after a start probes every agent CLI, which takes longer than a plain request.
+agents=$(curl -s -m 120 -K "$TMP/curlrc" "$url/api/agents" || true)
+for agent in claude codex pi opencode; do
+  if grep -q "\"$agent\"" <<<"$agents"; then pass "A10 /api/agents lists $agent"; else fail "A10 /api/agents does not list $agent"; fi
+  if podman exec open-design "$agent" --version >/dev/null 2>&1; then pass "A10 $agent runs in the container"; else fail "A10 $agent does not run in the container"; fi
+done
 
 # A11 gzip and immutable caching for a hashed asset
 asset=$(grep -oE '/_next/static/[A-Za-z0-9._/-]+\.(js|css)' <<<"$body" | head -n1 || true)

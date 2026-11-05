@@ -331,7 +331,7 @@ od_health_version() {
 }
 
 # od_dockerfile_od_version <Dockerfile>: the upstream OpenDesign version the image is built FROM,
-# read from the pinned `ARG BUILD_FROM=ghcr.io/nexu-io/od:<version>@sha256:...`.
+# read from the core contract `ARG CORE_OPENDESIGN_VERSION=<version>`.
 od_dockerfile_od_version() {
-  sed -n 's|^ARG BUILD_FROM=.*/od:\([0-9][^@[:space:]]*\).*|\1|p' "$1" | tail -n1
+  sed -n 's/^ARG CORE_OPENDESIGN_VERSION=\([0-9][^[:space:]]*\)$/\1/p' "$1" | head -n1
 }

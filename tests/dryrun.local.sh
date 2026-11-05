@@ -9,7 +9,7 @@ check() { # check <description> <command...>
 has_line() { grep -qxF -- "$3" "$WORK/$1/out/$2"; }
 
 check "example publishes nginx's port on 127.0.0.1" has_line example open-design.container 'PublishPort=127.0.0.1:7456:7456'
-check "example uses the default limits" has_line example open-design.container 'PodmanArgs=--memory=2g --cpus=2'
+check "example uses the default limits" has_line example open-design.container 'PodmanArgs=--memory=4g --cpus=2'
 check "BIND=all and a moved port are rendered" has_line fixture-lan open-design.container 'PublishPort=27456:7456'
 check "the daemon's limits are rendered per host" has_line fixture-lan open-design.container 'PodmanArgs=--memory=1536m --cpus=1.5'
 # The rules are applied per file: rendering the daemon's limits must not touch the nginx unit.

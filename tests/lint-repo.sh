@@ -62,6 +62,10 @@ lint_local() {
   unit_img=$(sed -n 's/^Image=//p' quadlet/open-design.container)
   [[ $unit_img == "localhost/woow-open-design:$version" ]] \
     || fail "quadlet/open-design.container pins $unit_img, but VERSION says $version"
+  # The core is pinned by digest, and the image's own version label agrees with VERSION.
+  grep -qE '^ARG BUILD_FROM=ghcr\.io/woowtech/open-design-core:[^@]+@sha256:[0-9a-f]{64}$' Dockerfile.full \
+    || fail "Dockerfile.full does not pin open-design-core by digest"
+  grep -qxF "ARG BUILD_VERSION=$version" Dockerfile.full || fail "Dockerfile.full BUILD_VERSION differs from VERSION $version"
   # The registry image is pinned by digest.
   unit_img=$(sed -n 's/^Image=//p' quadlet/open-design-nginx.container)
   [[ $unit_img == *@sha256:* ]] || fail "image not pinned by digest: $unit_img"

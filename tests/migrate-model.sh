@@ -479,14 +479,13 @@ t_the_app_version_is_compared_on_the_minor_series() {
 }
 
 t_the_pinned_version_is_read_from_the_dockerfile() {
-  # The image this repo builds is FROM a digest-pinned upstream od tag; that tag is the version the
+  # The core contract in Dockerfile.full names the OpenDesign version; that is the version the
   # migration compares against what the legacy daemon reports on /api/health.
   local v
   v=$(od_dockerfile_od_version "$REPO/Dockerfile.full")
   [[ $v =~ ^[0-9]+\.[0-9]+ ]] || die_t "cannot read the pinned OpenDesign version from Dockerfile.full (got '$v')"
-  # shellcheck disable=SC2016 # a Dockerfile fixture: ${BUILD_FROM} must stay literal
-  printf 'ARG BUILD_FROM=ghcr.io/nexu-io/od:0.99.7@sha256:deadbeef\nFROM ${BUILD_FROM}\n' >"$T/df"
-  eq "$(od_dockerfile_od_version "$T/df")" 0.99.7 "the tag, without the digest"
+  printf 'ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:1@sha256:deadbeef\nARG CORE_OPENDESIGN_VERSION=0.99.7\n' >"$T/df"
+  eq "$(od_dockerfile_od_version "$T/df")" 0.99.7 "the core contract version"
 }
 
 t_the_health_version_is_parsed_from_the_api() {

@@ -41,10 +41,8 @@ prepare_dir() {
   mkdir -p -- "$dir"
 }
 
-# HOME lives in the data volume, not the tmpfs /home/open-design this stack used
-# to run with. OpenCode writes its BYOK credentials and session state under
-# $HOME; on a tmpfs every `podman restart` silently signed the user out, which
-# is the opposite of the standalone behaviour this alignment is for.
+# HOME lives in the data volume: the agent CLIs keep their logins, settings and
+# session state under it, so a `podman restart` must not sign anyone out.
 for dir in "$DATA_DIR/home" "$DATA_DIR/export-render" "$DATA_DIR/export-pdf"; do
   prepare_dir "$dir"
 done
@@ -56,6 +54,15 @@ done
 export OD_DATA_DIR="$DATA_DIR"
 export OD_BIND_HOST=127.0.0.1
 export OD_PORT="${OD_PORT:-7457}"
+export OD_DAEMON_URL="http://127.0.0.1:$OD_PORT"
 export HOME="$DATA_DIR/home"
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+export CODEX_HOME="$HOME/.codex"
+export PI_CODING_AGENT_DIR="$HOME/.pi/agent"
+export XDG_CONFIG_HOME="$HOME/.config"
+
+# Opt the agent CLIs (and their libraries) out of telemetry, as the HA add-on does.
+export DO_NOT_TRACK=1
+export DISABLE_TELEMETRY=1
 
 exec /usr/local/bin/node /opt/woow-opendesign/headless-entry.mjs

@@ -43,3 +43,13 @@ jobs:
         with:
           dockerfile: Dockerfile.full
           failure-threshold: error
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The core contract is the last RUN of Dockerfile.full: this fails on a core that lacks an
+      # agent CLI or has another version of one.
+      - name: Build the image from the pinned core
+        run: docker build --build-arg BUILD_VERSION="$(cat VERSION)" -f Dockerfile.full -t woow-open-design:ci .
