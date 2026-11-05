@@ -39,6 +39,7 @@ if ((hot == 0)) && [[ $was_running == active ]]; then
   ql_cleanup restart start_again
 fi
 ql_backup_volume open-design_open_design_data "$dest" >/dev/null
+if podman volume exists open-design_mcp_data; then ql_backup_volume open-design_mcp_data "$dest" >/dev/null; fi
 printf '%s\n' "$OD_VERSION" >"$dest/VERSION"
 if ((hot == 0)) && [[ $was_running == active ]]; then
   ql_cleanup_clear restart

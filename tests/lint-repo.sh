@@ -18,9 +18,10 @@ ok() { printf 'ok   %s\n' "$*"; }
 # where <hits>: print file:line only, never the matched text
 where() { cut -d: -f1,2 | sed 's/^/     /'; }
 
-# The vendored library and this script itself carry the patterns by nature.
+# The vendored library, the pinned MCP runtime (checked against its sha256 list at build time) and
+# this script itself carry the patterns by nature.
 mapfile -t files < <(git ls-files --cached --others --exclude-standard \
-  | grep -vE '^(scripts/lib/quadlet-lib\.sh|tests/lint-repo\.sh)$' || true)
+  | grep -vE '^(scripts/lib/quadlet-lib\.sh|tests/lint-repo\.sh|mcp-runtime/ha/.*)$' || true)
 text=()
 for f in "${files[@]}"; do [[ -f $f ]] && grep -Iq . "$f" 2>/dev/null && text+=("$f"); done
 
@@ -62,6 +63,10 @@ lint_local() {
   unit_img=$(sed -n 's/^Image=//p' quadlet/open-design.container)
   [[ $unit_img == "localhost/woow-open-design:$version" ]] \
     || fail "quadlet/open-design.container pins $unit_img, but VERSION says $version"
+  for f in quadlet/open-design-mcp.container quadlet/open-design-terminal.container; do
+    grep -qxF "Image=localhost/woow-open-design:$version" "$f" || fail "$f does not use the image of VERSION $version"
+    grep -qE '^PublishPort=' "$f" && fail "$f publishes a port; only the daemon publishes nginx's port"
+  done
   # The core is pinned by digest, and the image's own version label agrees with VERSION.
   grep -qE '^ARG BUILD_FROM=ghcr\.io/woowtech/open-design-core:[^@]+@sha256:[0-9a-f]{64}$' Dockerfile.full \
     || fail "Dockerfile.full does not pin open-design-core by digest"
@@ -73,6 +78,8 @@ lint_local() {
   # export bridge is still injected.
   grep -qF 'include /etc/nginx/woow-auth.conf;' config/nginx.conf || fail "config/nginx.conf lost the credential include"
   grep -qF 'auth_basic_user_file /etc/nginx/htpasswd;' config/nginx-auth.basic.conf || fail "the basic auth variant no longer asks for a password"
+  # shellcheck disable=SC2016 # literal nginx variable
+  grep -qF 'proxy_set_header Origin     $http_origin;' config/nginx.conf || fail "config/nginx.conf rewrites the Origin ttyd checks"
   grep -qF 'sub_filter' config/nginx.conf || fail "config/nginx.conf lost the export-bridge injection"
   grep -qxF 'WOOW_OD_AUTH=basic' config/open-design.env.example || fail "the shipped default is no longer WOOW_OD_AUTH=basic"
   # The daemon keeps its loopback bind and the limits podman-compose dropped.

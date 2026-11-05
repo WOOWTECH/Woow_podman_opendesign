@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.1.0 — 2026-11-05
+
+Phase 2 of aligning with the PaaS service and the Home Assistant add-on.
+
+- **Built-in MCP server** in its own container (`open-design-mcp`, uid 10001): the same runtime and 15
+  tools as the PaaS service and the add-on (`mcp-runtime/`). Clients use `/mcp` with a Bearer token, or
+  `/private_<token>/mcp`; both go through nginx on the published port, and port 8081 is not on the host.
+  The token and tool switches are at `/mcp-admin/`, behind the Basic auth sign-in.
+  **All 15 tools are on by default, including `create_project`, `delete_project` and `send_message`.**
+- **Web terminal** at `/console/` in its own container (`open-design-terminal`), behind the Basic auth
+  sign-in. It is a shell as the agents' uid, so the sign-in password now also gives a shell.
+- `backup.sh` and `restore.sh` include the MCP state. A backup therefore contains the MCP token.
+- **Fix: a failed upgrade could not roll back past added units.** The rollback removed their files but left
+  them running, and a sidecar in the daemon's network namespace keeps the daemon's container from being
+  replaced. It now stops such units first, and its health check no longer uses the new version's smoke test.
+
 ## 4.0.0 — 2026-11-05 (BREAKING)
 
 Phase 1 of aligning with the PaaS service and the Home Assistant add-on.

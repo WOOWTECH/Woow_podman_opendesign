@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Entrypoint of the web terminal container: a writable login shell as the agents'
+# user, with the same home as the daemon, so a CLI login made here is the login
+# the daemon's agents use. It has no API token and no provider keys of its own.
+#
+# ttyd only listens on the namespace's loopback; nginx is its only client and adds
+# the credential check. --check-origin compares the browser's Origin with its Host,
+# so nginx must pass both through unchanged: a browser sends cached Basic credentials
+# on a cross-site WebSocket too, and this check is what refuses that.
+readonly DATA_DIR=/app/.od
+
+export HOME="$DATA_DIR/home"
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+export CODEX_HOME="$HOME/.codex"
+export PI_CODING_AGENT_DIR="$HOME/.pi/agent"
+export XDG_CONFIG_HOME="$HOME/.config"
+export DO_NOT_TRACK=1
+export DISABLE_TELEMETRY=1
+
+if [[ ! -d "$HOME" || -L "$HOME" ]]; then
+  echo "[woow-opendesign] $HOME is not a directory" >&2
+  exit 78
+fi
+
+exec /usr/bin/ttyd --port 7681 --interface 127.0.0.1 --base-path /console \
+  --writable --check-origin --max-clients 1 --cwd "$HOME" /bin/bash --login

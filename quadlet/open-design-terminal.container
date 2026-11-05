@@ -1,0 +1,40 @@
+# Web terminal at /console/: a writable shell as the agents' uid, on the daemon's data volume, so a CLI
+# login made here is the one the daemon's agents use. Anyone with the Basic auth password has this shell.
+#
+# It gets no API token and no provider keys. It joins the daemon's network namespace and listens on
+# 127.0.0.1:7681 there; nginx is its only way in.
+[Unit]
+Description=Woow OpenDesign web terminal
+Documentation=https://github.com/WOOWTECH/Woow_podman_opendesign
+BindsTo=open-design.service
+After=open-design.service
+
+[Container]
+ContainerName=open-design-terminal
+Image=localhost/woow-open-design:4.1.0
+Pull=never
+Network=container:open-design
+Label=io.woowtech.stack=open-design
+UserNS=keep-id:uid=1001,gid=1001
+ReadOnly=true
+Tmpfs=/tmp
+Volume=open-design-data.volume:/app/.od
+NoNewPrivileges=true
+PidsLimit=256
+PodmanArgs=--memory=2g --cpus=1 --entrypoint=/usr/local/bin/podman-opendesign-terminal
+HealthCmd=/usr/bin/curl -fsS -o /dev/null http://127.0.0.1:7681/console/
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=5
+HealthStartPeriod=15s
+
+[Service]
+SuccessExitStatus=143
+Restart=always
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+[Install]
+# Comes back whenever the daemon starts; backup.sh and restore.sh stop and start only the daemon.
+WantedBy=default.target
+WantedBy=open-design.service

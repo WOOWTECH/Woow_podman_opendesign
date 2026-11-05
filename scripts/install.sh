@@ -97,7 +97,7 @@ else
   od_build_image
 fi
 ql_pull_images "$WORK/out"
-od_repair_data_ownership
+od_repair_data_ownership open-design_open_design_data
 restart_daemon=0 restart_nginx=0
 if ((rotate)); then
   ql_secret_ensure open-design-api-token random:64 --replace
@@ -131,11 +131,13 @@ if ((no_start)); then
   ql_info "installed; not started (--no-start). Start with: systemctl --user start open-design.service"
   exit 0
 fi
-ql_apply_units "$APP" open-design.service open-design-nginx.service
+ql_apply_units "$APP" open-design.service open-design-nginx.service open-design-mcp.service open-design-terminal.service
 
 # ---- 7. health and smoke ----------------------------------------------------------------------
 app_wait_healthy open-design 300 open-design.service
 app_wait_healthy open-design-nginx 120 open-design-nginx.service
+app_wait_healthy open-design-mcp 120 open-design-mcp.service
+app_wait_healthy open-design-terminal 120 open-design-terminal.service
 host=$(app_local_host "$bind")
 ql_wait_http "http://$host:$port/api/health" '200' 120 || ql_die "the nginx front does not answer on $host:$port"
 app_env_record
@@ -148,6 +150,8 @@ $APP $OD_VERSION is installed and healthy.
   UI         http://$host:$port/
   Sign in    user "open-design", password = the API token:
              (private terminal) podman secret inspect --showsecret --format '{{.SecretData}}' open-design-api-token
+  Terminal   http://$host:$port/console/ (the same sign-in; it is a shell in the container)
+  MCP        http://$host:$port/mcp (token on http://$host:$port/mcp-admin/)
   Auth       WOOW_OD_AUTH=$auth
   Settings   $ENV_FILE (edit, then run scripts/install.sh again)
 EOF

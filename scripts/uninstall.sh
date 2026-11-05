@@ -40,6 +40,7 @@ if ((purge)); then
     if podman volume exists open-design_open_design_data; then
       ql_backup_volume open-design_open_design_data "$final" >/dev/null
     fi
+    if podman volume exists open-design_mcp_data; then ql_backup_volume open-design_mcp_data "$final" >/dev/null; fi
     if [[ -f $ENV_FILE ]]; then install -m 600 -- "$ENV_FILE" "$final/${ENV_FILE##*/}"; fi
     app_checksums "$final"
     ql_info "final backup: $final"

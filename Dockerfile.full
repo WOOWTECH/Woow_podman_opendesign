@@ -5,6 +5,17 @@
 # The core provides OpenDesign 0.24.1, Claude Code, Codex, Pi, OpenCode, Chromium and the CJK fonts.
 # amd64 only: the core is built for linux/amd64.
 ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261101.2319@sha256:a3d1e6ce84774d11e03a31b379be438b5f53fe832ddd4b72d31fc837462bbd62
+
+# Built-in MCP server: admin UI assets, built with the core's own Node from the vendored, lock-pinned
+# sources. Only dist/ is kept. --include=dev because the core sets NODE_ENV=production.
+FROM ${BUILD_FROM} AS woow-mcp-ui
+USER root
+WORKDIR /ui
+COPY mcp-runtime/ha/vendor/packages/mcp-admin-ui/ ./
+RUN /usr/local/bin/npm ci --include=dev --ignore-scripts --no-audit --no-fund \
+    && /usr/local/bin/npm run build \
+    && test -f dist/index.html
+
 FROM ${BUILD_FROM}
 
 # Versions the core must provide; the contract below fails the build on any mismatch.
@@ -25,10 +36,19 @@ ENV OD_BIND_HOST=127.0.0.1 \
     OD_DATA_DIR=/app/.od \
     HOME=/app/.od/home
 
+# The web terminal. Everything else comes from the core.
+RUN apk add --no-cache ttyd=1.7.7-r0 \
+    && rm -rf /var/cache/apk/*
+
 COPY runtime/package.json runtime/package-lock.json /opt/woow-opendesign/
 # Absolute npm path: a build frontend may supply a reduced PATH.
 RUN /usr/local/bin/npm ci --omit=dev --prefix /opt/woow-opendesign \
     && /usr/local/bin/npm cache clean --force
+
+# Built-in MCP server (mcp-runtime/): code under /opt/woow, root-owned and read-only, user mcp (10001).
+COPY --from=woow-mcp-ui /ui/dist /opt/woow/packages/mcp-admin-ui/dist
+COPY mcp-runtime/ /tmp/mcp-runtime/
+RUN sh /tmp/mcp-runtime/install.sh && rm -rf /tmp/mcp-runtime
 
 COPY rootfs/ /
 # Tools that resolve the passwd home instead of $HOME (OpenCode keeps its cache, data and state
@@ -47,12 +67,13 @@ RUN set -eu; \
     test "$(getent passwd open-design | cut -d: -f6)" = /app/.od/home; \
     chmod 0755 \
       /usr/local/bin/podman-opendesign \
+      /usr/local/bin/podman-opendesign-terminal \
       /opt/woow-opendesign/headless-entry.mjs \
       /opt/woow-opendesign/headless-renderer.mjs; \
     chown -R root:root /opt/woow-opendesign; \
     chmod -R go-w /opt/woow-opendesign
 
-ARG BUILD_VERSION=4.0.0
+ARG BUILD_VERSION=4.1.0
 ARG BUILD_DATE
 ARG BUILD_REF
 ARG BUILD_REPOSITORY=WOOWTECH/Woow_podman_opendesign
@@ -82,11 +103,14 @@ RUN set -eu; \
     test "$(codex --version | awk '{print $2}')" = "$CORE_CODEX_VERSION"; \
     test "$(pi --version | tr -d '[:space:]')" = "$CORE_PI_VERSION"; \
     test "$(opencode --version | tr -d '[:space:]')" = "$CORE_OPENCODE_VERSION"; \
-    for b in bash node npm chromium-browser curl tini; do \
+    for b in bash node npm chromium-browser curl tini ttyd; do \
       command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done; \
     fc-list | grep -qi 'Noto Sans CJK'; \
     test ! -w /opt/woow-opendesign; \
+    test ! -w /opt/woow; \
+    test -x /opt/woow/bin/paas-opendesign-mcp; \
+    ! id -nG | tr ' ' '\n' | grep -qx mcp; \
     node -e "import('/opt/woow-opendesign/headless-renderer.mjs').then(m=>{if(typeof m.renderSlides!=='function')throw new Error('renderSlides missing');console.log('renderSlides ok')})"
 
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/podman-opendesign"]
