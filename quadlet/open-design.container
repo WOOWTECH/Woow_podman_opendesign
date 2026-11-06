@@ -15,7 +15,7 @@ Documentation=https://github.com/WOOWTECH/Woow_podman_opendesign
 [Container]
 ContainerName=open-design
 # Built from Dockerfile.full by scripts/install.sh; the tag is the repo VERSION file.
-Image=localhost/woow-open-design:4.2.0
+Image=localhost/woow-open-design:4.2.1
 Pull=never
 Network=open-design.network
 HostName=open-design

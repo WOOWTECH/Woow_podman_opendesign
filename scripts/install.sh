@@ -51,12 +51,19 @@ ql_preflight "$PODMAN_MIN"
 ql_enable_linger
 ql_lock "$APP"
 # ---- 2. per-host settings ---------------------------------------------------------------------
+# An existing file gets the --set values first, so the check for keys the example added after an
+# upgrade does not report a key this same run is adding.
+sets_applied=0
+if ((${#sets[@]})) && [[ -f $ENV_FILE && -O $ENV_FILE ]]; then
+  app_apply_sets "${sets[@]}"
+  sets_applied=1
+fi
 ql_env_ensure "$ENV_EXAMPLE" "$ENV_FILE"
 if [[ $QL_ENV_CREATED == 1 && $accept == 0 && ${#sets[@]} == 0 ]]; then
   ql_info "review $ENV_FILE (at least OD_ALLOWED_ORIGINS), then run $0 again (or pass --accept-defaults)"
   exit 0
 fi
-((${#sets[@]} == 0)) || app_apply_sets "${sets[@]}"
+((${#sets[@]} == 0 || sets_applied)) || app_apply_sets "${sets[@]}"
 app_env_load
 app_env_overlay "${sets[@]}"
 app_refuse_env_secrets
