@@ -46,20 +46,20 @@ reject "an auth mode other than basic/off" WOOW_OD_AUTH 'maybe'
 
 # Paseo: install.sh's od_check_paseo, run on the example settings plus the given ones.
 paseo_case() { # paseo_case <description> <ok|refused> <auth> [KEY=VALUE...]
-  local what=$1 want=$2 auth=$3 env=$WORK/paseo.env out=$WORK/paseo.conf kv got
+  local pc_desc=$1 pc_want=$2 pc_auth=$3 pc_env=$WORK/paseo.env pc_out=$WORK/paseo.conf pc_kv pc_got
   shift 3
-  cp "$REPO/config/open-design.env.example" "$env"
-  for kv in "$@"; do sed -i "s|^${kv%%=*}=.*|$kv|" "$env"; done
-  rm -f "$out"
+  cp "$REPO/config/open-design.env.example" "$pc_env"
+  for pc_kv in "$@"; do sed -i "s|^${pc_kv%%=*}=.*|$pc_kv|" "$pc_env"; done
+  rm -f "$pc_out"
   if (
     # shellcheck source=scripts/common.sh
     . "$REPO/scripts/common.sh"
     # shellcheck source=scripts/od-helpers.sh
     . "$REPO/scripts/od-helpers.sh"
-    ql_env_load "$env"
-    od_check_paseo "$(ql_env_get WOOW_OD_PASEO off)" "$auth" "$out"
-  ) >/dev/null 2>&1; then got=ok; else got=refused; fi
-  if [[ $got == "$want" ]]; then echo "ok   Paseo: $what"; else echo "FAIL Paseo: $what ($got)"; failures=$((failures + 1)); fi
+    ql_env_load "$pc_env"
+    od_check_paseo "$(ql_env_get WOOW_OD_PASEO off)" "$pc_auth" "$pc_out"
+  ) >/dev/null 2>&1; then pc_got=ok; else pc_got=refused; fi
+  if [[ $pc_got == "$pc_want" ]]; then echo "ok   Paseo: $pc_desc"; else echo "FAIL Paseo: $pc_desc ($pc_got)"; failures=$((failures + 1)); fi
 }
 po=OD_ALLOWED_ORIGINS=http://127.0.0.1:7456,https://od.example.com
 paseo_case "off by default renders the off answer" ok basic
