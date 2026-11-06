@@ -72,3 +72,22 @@ paseo_case "on with an origin not in OD_ALLOWED_ORIGINS" refused basic WOOW_OD_P
 paseo_case "on with a path in the origin" refused basic WOOW_OD_PASEO=on OPENDESIGN_PASEO_ORIGIN=https://od.example.com/x "$po"
 paseo_case "on with WOOW_OD_AUTH=off" refused off WOOW_OD_PASEO=on OPENDESIGN_PASEO_ORIGIN=https://od.example.com "$po"
 paseo_case "a value other than on/off" refused basic WOOW_OD_PASEO=yes
+
+
+# od_check_origins warns about an origin without a port only when it is plain http.
+origin_warning() { # origin_warning <OD_ALLOWED_ORIGINS value>: prints the check's warnings
+  local oc_env=$WORK/origins.env
+  sed "s|^OD_ALLOWED_ORIGINS=.*|OD_ALLOWED_ORIGINS=$1|" "$REPO/config/open-design.env.example" >"$oc_env"
+  (
+    # shellcheck source=scripts/common.sh
+    . "$REPO/scripts/common.sh"
+    # shellcheck source=scripts/od-helpers.sh
+    . "$REPO/scripts/od-helpers.sh"
+    ql_env_load "$oc_env"
+    od_check_origins 7456 127.0.0.1
+  ) 2>&1
+}
+check "an https:// origin without a port does not warn" \
+  bash -c "! grep -q 'has no port' <<<\"\$1\"" _ "$(origin_warning http://127.0.0.1:7456,https://od.example.com)"
+check "an http:// origin without a port still warns" \
+  bash -c "grep -q 'has no port' <<<\"\$1\"" _ "$(origin_warning http://127.0.0.1:7456,http://od.lan)"

@@ -13,7 +13,9 @@ od_check_origins() {
     [[ -n $entry ]] || continue
     ql_assert_match OD_ALLOWED_ORIGINS "$entry" 'https?://([^/:]+|\[[0-9a-fA-F:]+\])(:[0-9]{1,5})?'
     [[ $entry == "$local_origin" ]] && found=1
-    if [[ $entry != *:[0-9]* && $port != 80 && $port != 443 ]]; then
+    # An https:// origin without a port is a TLS front (a tunnel or a reverse proxy) on 443, not
+    # this host's published port.
+    if [[ $entry != https://* && $entry != *:[0-9]* && $port != 80 && $port != 443 ]]; then
       ql_warn "OD_ALLOWED_ORIGINS entry '$entry' has no port while OpenDesign is published on $port"
     fi
   done

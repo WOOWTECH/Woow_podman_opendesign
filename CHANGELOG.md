@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.2.1 — 2026-11-06
+
+Findings from testing 4.2.0 through a Cloudflare tunnel with the official Paseo web app and woowtech smart.
+
+- `install.sh --set` no longer warns that the env file lacks the keys this same run is setting.
+- `install.sh` no longer warns that an `https://` origin has no port: it is a TLS front on 443.
+- README: pairing with the official Paseo app and with woowtech smart, switching agents and models, and
+  what to expect behind a Cloudflare tunnel (Access, the 1010 user-agent check).
+
 ## 4.2.0 — 2026-11-06
 
 Phase 3 of aligning with the PaaS service and the Home Assistant add-on.

@@ -150,6 +150,19 @@ agents there and pair the app. `install.sh` refuses `on` without an `https://` o
 token, on loopback port 7460, behind the UI's sign-in. Its state and the pairing live in the data
 volume, so a backup contains them. It needs outbound HTTPS to `app.paseo.sh` for the relay.
 
+Pair from the official Paseo app or web app (`app.paseo.sh`). The link also opens in woowtech smart's web
+app (`smart.woowtech.io`, a Paseo fork); it warns that the link uses Paseo's relay (`relay.paseo.sh`)
+instead of `relay.woowtech.io`, and works after you confirm. Claude Code, Codex, Pi and OpenCode are all
+available there. A conversation can switch between that agent's models and keeps its history; another
+agent needs a new tab, and the earlier tabs keep their conversations. Copilot, Antigravity and Muse Code
+show Error because this image does not include them.
+
+**Behind a Cloudflare tunnel.** Cloudflare Access sends anything without a browser login to its login
+page, which includes MCP clients, `curl` and the Paseo bridge's own API calls. Without Access, the UI's
+Basic auth is the only credential check, and it covers `/console/` (a shell) too. Cloudflare's Browser
+Integrity Check refuses some default user agents with error 1010, Python's `urllib` among them: an MCP
+client that gets a 403 from the tunnel but not from `127.0.0.1` needs its own `User-Agent`.
+
 **Omnigent** is part of every install: Settings → Omnigent, or the Omnigent card. Enter an `https://`
 Omnigent server URL that this container can reach, with an account there; the container then shows up
 as one machine in that server. Use a dedicated account without admin rights: anyone on that server who
