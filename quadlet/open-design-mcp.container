@@ -11,7 +11,7 @@ After=open-design.service
 
 [Container]
 ContainerName=open-design-mcp
-Image=localhost/woow-open-design:4.1.1
+Image=localhost/woow-open-design:4.1.2
 Pull=never
 Network=container:open-design
 Label=io.woowtech.stack=open-design

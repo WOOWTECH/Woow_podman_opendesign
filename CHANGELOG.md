@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.1.2 — 2026-11-06
+
+- **Fix: Codex answered but wrote no file.** Its own sandbox (bubblewrap) cannot mount `/proc` in a
+  rootless container. `OD_CODEX_SANDBOX` now defaults to `danger-full-access`, so the container is
+  Codex's sandbox, as it already is for Claude, Pi and OpenCode: uid 1001, read-only root filesystem,
+  writes only to the data volume. Set `OD_CODEX_SANDBOX` in `open-design.env` to override.
+  `codex` started by hand in `/console/` still uses its own sandbox; pass `--sandbox danger-full-access`.
+
 ## 4.1.1 — 2026-11-05
 
 Fixes from a full test in a real Firefox.
