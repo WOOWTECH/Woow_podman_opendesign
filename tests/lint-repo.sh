@@ -86,6 +86,9 @@ lint_local() {
   # shellcheck disable=SC2016 # literal nginx variable
   grep -qF 'proxy_set_header Origin     $http_origin;' config/nginx.conf || fail "config/nginx.conf rewrites the Origin ttyd checks"
   grep -qF 'sub_filter' config/nginx.conf || fail "config/nginx.conf lost the export-bridge injection"
+  # shellcheck disable=SC2016 # literal shell text
+  grep -qxF 'export OD_CODEX_SANDBOX="${OD_CODEX_SANDBOX:-danger-full-access}"' rootfs/usr/local/bin/podman-opendesign \
+    || fail "the launcher no longer defaults OD_CODEX_SANDBOX, and Codex cannot write files"
   grep -qxF 'WOOW_OD_AUTH=basic' config/open-design.env.example || fail "the shipped default is no longer WOOW_OD_AUTH=basic"
   # The daemon keeps its loopback bind and the limits podman-compose dropped.
   grep -qxF 'Environment=OD_BIND_HOST=127.0.0.1' quadlet/open-design.container || fail "the daemon no longer binds loopback only"

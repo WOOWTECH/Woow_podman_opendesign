@@ -60,6 +60,10 @@ export CLAUDE_CONFIG_DIR="$HOME/.claude"
 export CODEX_HOME="$HOME/.codex"
 export PI_CODING_AGENT_DIR="$HOME/.pi/agent"
 export XDG_CONFIG_HOME="$HOME/.config"
+# Codex's own workspace-write sandbox is bubblewrap, which cannot mount /proc in a rootless
+# container ("Operation not permitted"): Codex then answers but writes no file. The container is the
+# sandbox here, as it is for the other three agents. Set OD_CODEX_SANDBOX to override.
+export OD_CODEX_SANDBOX="${OD_CODEX_SANDBOX:-danger-full-access}"
 
 # Opt the agent CLIs (and their libraries) out of telemetry, as the HA add-on does.
 export DO_NOT_TRACK=1

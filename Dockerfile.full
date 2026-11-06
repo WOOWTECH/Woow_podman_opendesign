@@ -77,7 +77,7 @@ RUN set -eu; \
     chown -R root:root /opt/woow-opendesign; \
     chmod -R go-w /opt/woow-opendesign
 
-ARG BUILD_VERSION=4.1.1
+ARG BUILD_VERSION=4.1.2
 ARG BUILD_DATE
 ARG BUILD_REF
 ARG BUILD_REPOSITORY=WOOWTECH/Woow_podman_opendesign
