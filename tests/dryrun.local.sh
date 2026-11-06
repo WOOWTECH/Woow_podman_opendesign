@@ -52,9 +52,9 @@ paseo_case() { # paseo_case <description> <ok|refused> <auth> [KEY=VALUE...]
   for kv in "$@"; do sed -i "s|^${kv%%=*}=.*|$kv|" "$env"; done
   rm -f "$out"
   if (
-    # shellcheck source=../scripts/common.sh
+    # shellcheck source=scripts/common.sh
     . "$REPO/scripts/common.sh"
-    # shellcheck source=../scripts/od-helpers.sh
+    # shellcheck source=scripts/od-helpers.sh
     . "$REPO/scripts/od-helpers.sh"
     ql_env_load "$env"
     od_check_paseo "$(ql_env_get WOOW_OD_PASEO off)" "$auth" "$out"
