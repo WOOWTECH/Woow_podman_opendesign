@@ -21,7 +21,7 @@ where() { cut -d: -f1,2 | sed 's/^/     /'; }
 # The vendored library, the pinned MCP runtime (checked against its sha256 list at build time) and
 # this script itself carry the patterns by nature.
 mapfile -t files < <(git ls-files --cached --others --exclude-standard \
-  | grep -vE '^(scripts/lib/quadlet-lib\.sh|tests/lint-repo\.sh|mcp-runtime/ha/.*)$' || true)
+  | grep -vE '^(scripts/lib/quadlet-lib\.sh|tests/lint-repo\.sh|mcp-runtime/ha/.*|paseo/runtime/.*)$' || true)
 text=()
 for f in "${files[@]}"; do [[ -f $f ]] && grep -Iq . "$f" 2>/dev/null && text+=("$f"); done
 
@@ -89,6 +89,15 @@ lint_local() {
   # shellcheck disable=SC2016 # literal shell text
   grep -qxF 'export OD_CODEX_SANDBOX="${OD_CODEX_SANDBOX:-danger-full-access}"' rootfs/usr/local/bin/podman-opendesign \
     || fail "the launcher no longer defaults OD_CODEX_SANDBOX, and Codex cannot write files"
+  # Paseo: a pinned, unedited copy, off by default, and its routes stay behind the sign-in.
+  (cd paseo && sha256sum --quiet -c SOURCE.sha256) || fail "paseo/ differs from paseo/SOURCE.sha256"
+  [[ $(cd paseo && find legal runtime paseo-launch.py -type f | wc -l) == $(wc -l <paseo/SOURCE.sha256) ]] || fail "paseo/ has files SOURCE.sha256 does not list"
+  grep -qxF 'WOOW_OD_PASEO=off' config/open-design.env.example || fail "the shipped default is no longer WOOW_OD_PASEO=off"
+  grep -qF 'include /etc/nginx/woow-paseo.conf;' config/nginx.conf || fail "config/nginx.conf lost the Paseo include"
+  grep -qF 'auth_basic' config/nginx-paseo.on.conf && fail "config/nginx-paseo.on.conf changes the sign-in"
+  [[ $(grep -c 'return 403;' config/nginx-paseo.on.conf) == $(grep -c 'proxy_pass http://127.0.0.1:7460;' config/nginx-paseo.on.conf) ]] || fail "a Paseo location has no Origin check"
+  grep -q 'healthz' config/nginx-paseo.on.conf && fail "config/nginx-paseo.on.conf routes the bridge's /healthz"
+  grep -qF 'WOOW_OD_PASEO=on requires WOOW_OD_AUTH=basic' scripts/od-helpers.sh || fail "install.sh no longer requires the sign-in for Paseo"
   grep -qxF 'WOOW_OD_AUTH=basic' config/open-design.env.example || fail "the shipped default is no longer WOOW_OD_AUTH=basic"
   # The daemon keeps its loopback bind and the limits podman-compose dropped.
   grep -qxF 'Environment=OD_BIND_HOST=127.0.0.1' quadlet/open-design.container || fail "the daemon no longer binds loopback only"

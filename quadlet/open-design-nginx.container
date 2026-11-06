@@ -22,6 +22,7 @@ Network=container:open-design
 Label=io.woowtech.stack=open-design
 Volume=%h/.config/open-design/nginx.conf:/etc/nginx/nginx.conf:ro,Z
 Volume=%h/.config/open-design/nginx-auth.conf:/etc/nginx/woow-auth.conf:ro,Z
+Volume=%h/.config/open-design/nginx-paseo.conf:/etc/nginx/woow-paseo.conf:ro,Z
 Volume=%h/.config/open-design/od-export-bridge.js:/etc/nginx/od-export-bridge.js:ro,Z
 # admin.sock of the MCP server. nginx is the only container besides open-design-mcp that mounts it.
 Volume=open-design-mcp-run.volume:/run/od-mcp:ro

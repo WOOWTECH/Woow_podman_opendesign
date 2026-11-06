@@ -212,5 +212,41 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -m 5 -K "$TMP/curlrc" "${ws[@]}" -
 if [[ $code == 101 ]]; then pass "A15 the local Origin opens the terminal WebSocket"; else fail "A15 the local Origin got $code on the terminal WebSocket"; fi
 if podman exec open-design-terminal sh -c 'test -z "${OD_API_TOKEN:-}"' >/dev/null 2>&1; then pass "A15 the terminal has no API token"; else fail "A15 the terminal has the API token"; fi
 
+# A16 Omnigent: the core's host is installed and the daemon reports it, before and after a login
+status=$(curl -s -m 15 -K "$TMP/curlrc" "$url/api/integrations/omnigent/status" || true)
+if [[ $status == *'"installed":true'* ]]; then
+  pass "A16 the daemon reports the Omnigent host as installed"
+else
+  fail "A16 /api/integrations/omnigent/status does not report an installed host"
+fi
+if podman exec open-design omnigent --version >/dev/null 2>&1; then pass "A16 omnigent runs in the container"; else fail "A16 omnigent does not run in the container"; fi
+
+# A17 Paseo: off answers "Paseo is off"; on is behind the sign-in, refuses a foreign Origin on a
+# change, and keeps the bridge's own /healthz private
+paseo=$(ql_env_get WOOW_OD_PASEO off)
+if [[ $paseo == on ]]; then
+  if [[ $auth == basic ]]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "$url/paseo/setup/" || true)
+    if [[ $code == 401 ]]; then pass "A17 /paseo/setup/ without credentials returns 401"; else fail "A17 /paseo/setup/ without credentials returned $code"; fi
+  fi
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 -K "$TMP/curlrc" "$url/paseo/setup/" || true)
+  if [[ $code == 200 ]]; then pass "A17 /paseo/setup/ with the sign-in returns 200"; else fail "A17 /paseo/setup/ with the sign-in returned $code"; fi
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 -K "$TMP/curlrc" -X POST -H 'Origin: https://evil.example' -H 'Content-Type: application/json' --data '{}' "$url/api/paseo-bridge" || true)
+  if [[ $code == 403 ]]; then pass "A17 a foreign Origin cannot change Paseo"; else fail "A17 a foreign Origin got $code from /api/paseo-bridge"; fi
+  if curl -s -m 15 -K "$TMP/curlrc" "$url/healthz" | grep -q opendesign-paseo; then
+    fail "A17 the bridge's /healthz is reachable through nginx"
+  else
+    pass "A17 the bridge's /healthz is not routed"
+  fi
+  if podman exec open-design sh -c 'for p in /proc/[0-9]*; do tr "\0" "\n" <"$p/environ" 2>/dev/null | grep -q "^OPENDESIGN_PASEO_PORT=" && ! tr "\0" "\n" <"$p/environ" | grep -q "^OD_API_TOKEN=" && exit 0; done; exit 1' >/dev/null 2>&1; then
+    pass "A17 the Paseo bridge runs without the API token"
+  else
+    fail "A17 no Paseo bridge without the API token was found"
+  fi
+else
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 -K "$TMP/curlrc" "$url/paseo/setup/" || true)
+  if [[ $code == 503 ]]; then pass "A17 Paseo is off and /paseo/setup/ says so"; else fail "A17 Paseo is off but /paseo/setup/ returned $code"; fi
+fi
+
 printf '%s passed, %s failed, %s warnings\n' "$npass" "$nfail" "$nwarn"
 ((nfail == 0))

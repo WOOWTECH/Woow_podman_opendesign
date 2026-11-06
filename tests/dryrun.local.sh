@@ -43,3 +43,32 @@ reject() { # reject <description> <KEY> <bad value>
 reject "a memory limit with shell metacharacters" WOOW_OD_MEMORY '2g;id'
 reject "a non-numeric cpu limit" WOOW_OD_CPUS 'two'
 reject "an auth mode other than basic/off" WOOW_OD_AUTH 'maybe'
+
+# Paseo: install.sh's od_check_paseo, run on the example settings plus the given ones.
+paseo_case() { # paseo_case <description> <ok|refused> <auth> [KEY=VALUE...]
+  local what=$1 want=$2 auth=$3 env=$WORK/paseo.env out=$WORK/paseo.conf kv got
+  shift 3
+  cp "$REPO/config/open-design.env.example" "$env"
+  for kv in "$@"; do sed -i "s|^${kv%%=*}=.*|$kv|" "$env"; done
+  rm -f "$out"
+  if (
+    # shellcheck source=../scripts/common.sh
+    . "$REPO/scripts/common.sh"
+    # shellcheck source=../scripts/od-helpers.sh
+    . "$REPO/scripts/od-helpers.sh"
+    ql_env_load "$env"
+    od_check_paseo "$(ql_env_get WOOW_OD_PASEO off)" "$auth" "$out"
+  ) >/dev/null 2>&1; then got=ok; else got=refused; fi
+  if [[ $got == "$want" ]]; then echo "ok   Paseo: $what"; else echo "FAIL Paseo: $what ($got)"; failures=$((failures + 1)); fi
+}
+po=OD_ALLOWED_ORIGINS=http://127.0.0.1:7456,https://od.example.com
+paseo_case "off by default renders the off answer" ok basic
+check "Paseo: the off include proxies nothing" bash -c "! grep -q proxy_pass '$WORK/paseo.conf'"
+paseo_case "on with an allowed https origin" ok basic WOOW_OD_PASEO=on OPENDESIGN_PASEO_ORIGIN=https://od.example.com "$po"
+check "Paseo: the origin is a literal in the nginx regex" grep -qF 'https://od\.example\.com$' "$WORK/paseo.conf"
+paseo_case "on without an origin" refused basic WOOW_OD_PASEO=on "$po"
+paseo_case "on with an http origin" refused basic WOOW_OD_PASEO=on OPENDESIGN_PASEO_ORIGIN=http://od.example.com OD_ALLOWED_ORIGINS=http://127.0.0.1:7456,http://od.example.com
+paseo_case "on with an origin not in OD_ALLOWED_ORIGINS" refused basic WOOW_OD_PASEO=on OPENDESIGN_PASEO_ORIGIN=https://other.example.com "$po"
+paseo_case "on with a path in the origin" refused basic WOOW_OD_PASEO=on OPENDESIGN_PASEO_ORIGIN=https://od.example.com/x "$po"
+paseo_case "on with WOOW_OD_AUTH=off" refused off WOOW_OD_PASEO=on OPENDESIGN_PASEO_ORIGIN=https://od.example.com "$po"
+paseo_case "a value other than on/off" refused basic WOOW_OD_PASEO=yes

@@ -11,7 +11,8 @@ set -Eeuo pipefail
 # dance would fail, not merely be redundant.
 #
 # One process: tini is PID 1, this script execs node, so podman's SIGTERM lands
-# on the Node process and headless-entry.mjs runs the graceful shutdown.
+# on the Node process and headless-entry.mjs runs the graceful shutdown. With Paseo
+# on, it execs the Paseo supervisor instead, which forwards the stop to both.
 
 # /app/.od, not the k3s /data/opendesign. The deployed named volume
 # (open_design_data) is already mounted here and holds the existing projects;
@@ -69,4 +70,22 @@ export OD_CODEX_SANDBOX="${OD_CODEX_SANDBOX:-danger-full-access}"
 export DO_NOT_TRACK=1
 export DISABLE_TELEMETRY=1
 
-exec /usr/local/bin/node /opt/woow-opendesign/headless-entry.mjs
+daemon=(/usr/local/bin/node /opt/woow-opendesign/headless-entry.mjs)
+
+# Paseo (WOOW_OD_PASEO=on, checked by scripts/install.sh): its bridge must run beside the daemon in
+# this PID namespace, because the daemon checks who owns Paseo's stdio MCP process through /proc.
+# The supervisor (the PaaS chart's) starts the daemon unchanged, restarts only Paseo when it fails,
+# and gives Paseo an allowlisted environment without OD_API_TOKEN.
+if [[ ${WOOW_OD_PASEO:-off} == on ]]; then
+  prepare_dir "$DATA_DIR/paseo"
+  chmod 0700 "$DATA_DIR/paseo"
+  export OPENDESIGN_PASEO_DATA_DIR="$DATA_DIR"
+  export OPENDESIGN_PASEO_NATIVE_PORT="$OD_PORT"
+  export OPENDESIGN_PASEO_PORT=7460
+  export OPENDESIGN_PASEO_BUNDLED_PLUGIN=/app/plugins/_official/woow/woow-paseo
+  export OPENDESIGN_PASEO_AUTO_ENABLE=1
+  # The stop timeout fits podman's --stop-timeout in quadlet/open-design.container.
+  exec python3 /opt/woow-opendesign/paseo-launch.py --stop-timeout 30 -- "${daemon[@]}"
+fi
+unset "${!OPENDESIGN_PASEO_@}"
+exec "${daemon[@]}"

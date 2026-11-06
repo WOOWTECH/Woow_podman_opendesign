@@ -1,5 +1,25 @@
 # Changelog
 
+## 4.2.0 — 2026-11-06
+
+Phase 3 of aligning with the PaaS service and the Home Assistant add-on.
+
+- **Paseo, off by default.** With `WOOW_OD_PASEO=on` the Paseo bridge (remote control of Claude Code,
+  Codex and Pi from the Paseo phone app) runs beside the daemon, in its container, under the PaaS
+  chart's supervisor. `paseo/` is a pinned copy of the PaaS image's runtime, and `@getpaseo/cli` 0.11.2
+  is built into the image, so turning it on downloads nothing.
+  - The routes `/paseo/setup/`, `/paseo/assets/` and `/api/paseo-bridge` are behind the same Basic auth
+    as the UI. A change must come with the Paseo origin as its `Origin`. Nothing is logged for them.
+  - It needs an HTTPS origin: set `OPENDESIGN_PASEO_ORIGIN` (also listed in `OD_ALLOWED_ORIGINS`).
+    `install.sh` refuses `on` without one, or with `WOOW_OD_AUTH=off`.
+  - The bridge gets an allowlisted environment without `OD_API_TOKEN`. Its state, the phone pairing
+    included, is in the data volume, so backups contain it.
+  - Off, `/paseo/setup/` answers that Paseo is off instead of the app's page.
+- **Omnigent**: the core's host already ran here (Settings → Omnigent). The stop timeout goes from
+  15 s to 45 s so a stop does not cut it, or Paseo, off mid-shutdown. The smoke test checks it.
+- New settings in `open-design.env`: `WOOW_OD_PASEO` and `OPENDESIGN_PASEO_ORIGIN`. `install.sh` warns
+  that they are missing from an existing file; missing means off.
+
 ## 4.1.2 — 2026-11-06
 
 - **Fix: Codex answered but wrote no file.** Its own sandbox (bubblewrap) cannot mount `/proc` in a

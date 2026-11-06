@@ -81,6 +81,7 @@ render_args "$RENDER_ENV"
 ql_render "$WORK/src" "$RENDER_ENV" "$REPO/quadlet/render-vars" "$WORK/out" "${RENDER_ARGS[@]}"
 cp -p "$REPO/config/nginx.conf" "$REPO/config/od-export-bridge.js" "$WORK/out/config/"
 cp -p "$REPO/config/nginx-auth.$auth.conf" "$WORK/out/config/nginx-auth.conf"
+od_check_paseo "$(ql_env_get WOOW_OD_PASEO off)" "$auth" "$WORK/out/config/nginx-paseo.conf"
 ql_dryrun "$WORK/out" --verify --ref-dir "$HOME/.config/containers/systemd" \
   || ql_die "the rendered units failed the Quadlet dry-run; nothing was installed"
 for f in "$WORK/out"/*; do
@@ -120,7 +121,7 @@ fi
 # ---- 6. install changed files, then start / restart only what changed --------------------------
 changed=$(ql_install_files "$WORK/out" "$APP" --prune)
 [[ -z $changed ]] || ql_info "changed: $(tr '\n' ' ' <<<"$changed")"
-grep -qE '^config/(nginx\.conf|nginx-auth\.conf|od-export-bridge\.js)$' <<<"$changed" && restart_nginx=1
+grep -qE '^config/(nginx\.conf|nginx-auth\.conf|nginx-paseo\.conf|od-export-bridge\.js)$' <<<"$changed" && restart_nginx=1
 app_env_changed && restart_daemon=1
 if [[ $dry == 1 ]]; then
   ((restart_daemon)) && ql_info "[dry-run] would restart open-design.service (settings or token changed)"
