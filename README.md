@@ -133,6 +133,29 @@ Port 8081 is not published: clients go through nginx on `WOOW_OD_PORT`, so the s
 exactly as far as `WOOW_OD_BIND` allows. A backup contains the token; rotate it after restoring onto
 another host.
 
+## Paseo and Omnigent
+
+**Paseo** (off by default) lets the Paseo phone app drive Claude Code, Codex and Pi in this container.
+It needs an HTTPS origin, for example a Cloudflare tunnel hostname behind Cloudflare Access, or a
+`tailscale serve` name:
+
+```bash
+scripts/install.sh --set WOOW_OD_PASEO=on --set OPENDESIGN_PASEO_ORIGIN=https://od.example.com \
+  --set OD_ALLOWED_ORIGINS=http://127.0.0.1:7456,http://localhost:7456,https://od.example.com
+```
+
+Then open the Paseo card in OpenDesign (or `https://od.example.com/paseo/setup/`), sign in to the
+agents there and pair the app. `install.sh` refuses `on` without an `https://` origin that is also in
+`OD_ALLOWED_ORIGINS`, and with `WOOW_OD_AUTH=off`. The bridge runs beside the daemon without the API
+token, on loopback port 7460, behind the UI's sign-in. Its state and the pairing live in the data
+volume, so a backup contains them. It needs outbound HTTPS to `app.paseo.sh` for the relay.
+
+**Omnigent** is part of every install: Settings → Omnigent, or the Omnigent card. Enter an `https://`
+Omnigent server URL that this container can reach, with an account there; the container then shows up
+as one machine in that server. Use a dedicated account without admin rights: anyone on that server who
+can start sessions gets a shell as the agents' user here. Disconnecting does not revoke the grant on
+the server, and backups contain the host's identity.
+
 ## Verify
 
 ```bash

@@ -24,20 +24,25 @@ jobs:
       - name: Migration model tests (podman and systemctl are shims; no container is created)
         run: tests/migrate-model.sh
 
-      - name: nginx -t for both auth variants
+      - name: nginx -t for every auth and Paseo variant
         run: |
           set -eux
-          # The units mount these three files plus the htpasswd secret; check the config parses with
-          # the same nginx version the unit pins.
+          # The units mount these four files plus the htpasswd secret; check the config parses with
+          # the same nginx version the unit pins. Paseo on is rendered as install.sh does.
           image=$(sed -n 's/^Image=//p' quadlet/open-design-nginx.container)
           printf 'open-design:$apr1$dummysal$0123456789abcdefghijkl.\n' > /tmp/htpasswd
+          cp config/nginx-paseo.off.conf /tmp/paseo-off.conf
+          sed 's|@@PASEO_ORIGIN_RE@@|https://od\\.example\\.com|g' config/nginx-paseo.on.conf > /tmp/paseo-on.conf
           for variant in basic off; do
-            docker run --rm \
-              -v "$PWD/config/nginx.conf:/etc/nginx/nginx.conf:ro" \
-              -v "$PWD/config/nginx-auth.$variant.conf:/etc/nginx/woow-auth.conf:ro" \
-              -v "$PWD/config/od-export-bridge.js:/etc/nginx/od-export-bridge.js:ro" \
-              -v /tmp/htpasswd:/etc/nginx/htpasswd:ro \
-              "$image" nginx -t
+            for paseo in on off; do
+              docker run --rm \
+                -v "$PWD/config/nginx.conf:/etc/nginx/nginx.conf:ro" \
+                -v "$PWD/config/nginx-auth.$variant.conf:/etc/nginx/woow-auth.conf:ro" \
+                -v "/tmp/paseo-$paseo.conf:/etc/nginx/woow-paseo.conf:ro" \
+                -v "$PWD/config/od-export-bridge.js:/etc/nginx/od-export-bridge.js:ro" \
+                -v /tmp/htpasswd:/etc/nginx/htpasswd:ro \
+                "$image" nginx -t
+            done
           done
 
       - name: hadolint on Dockerfile.full

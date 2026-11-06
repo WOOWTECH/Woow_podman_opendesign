@@ -23,6 +23,31 @@ od_check_origins() {
   fi
 }
 
+# od_check_paseo <paseo> <auth> <out>: with WOOW_OD_PASEO=on, the Paseo bridge (which can start the
+# agents and pair a phone) needs nginx's Basic auth in front of it and a concrete https:// origin that
+# the daemon also accepts; its own origin check refuses anything else and it would not start. Writes
+# the nginx include for either state to <out>.
+od_check_paseo() {
+  local paseo=$1 auth=$2 out=$3 origin re
+  case $paseo in
+    off)
+      cp -p "$REPO/config/nginx-paseo.off.conf" "$out"
+      return 0 ;;
+    on) ;;
+    *) ql_die "WOOW_OD_PASEO must be on or off, not '$paseo'" ;;
+  esac
+  [[ $auth == basic ]] || ql_die "WOOW_OD_PASEO=on requires WOOW_OD_AUTH=basic: the Paseo routes have no other credential check"
+  origin=$(ql_env_get OPENDESIGN_PASEO_ORIGIN '')
+  [[ $origin =~ ^https://[a-z0-9.-]+(:[0-9]{1,5})?$ ]] \
+    || ql_die "WOOW_OD_PASEO=on requires OPENDESIGN_PASEO_ORIGIN=https://<host>[:port] (lower case, no path); it is '$origin'"
+  [[ ,$(ql_env_get OD_ALLOWED_ORIGINS ''), == *",$origin,"* ]] \
+    || ql_die "OPENDESIGN_PASEO_ORIGIN ($origin) must also be listed in OD_ALLOWED_ORIGINS"
+  # \\. survives sed as \. : a literal dot in the nginx regex.
+  re=${origin//./\\\\.}
+  sed "s|@@PASEO_ORIGIN_RE@@|$re|g" "$REPO/config/nginx-paseo.on.conf" >"$out"
+  ! grep -q '@@' "$out" || ql_die "the Paseo nginx include was not rendered"
+}
+
 # od_check_auth <auth> <bind>: Basic auth may only be turned off while the front is on loopback.
 # nginx is the only thing in front of the daemon, and /api/models-config returns the configured
 # provider keys, so auth=off on a routable address publishes them to the whole network -- which is

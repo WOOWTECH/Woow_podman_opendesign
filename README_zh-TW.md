@@ -123,6 +123,26 @@ Header  Authorization: Bearer <token>
 連接埠 8081 沒有發佈：用戶端經由 `WOOW_OD_PORT` 上的 nginx 連線，所以可連範圍就是 `WOOW_OD_BIND` 允許的範圍。
 備份內含 token，還原到別台主機後請輪換。
 
+## Paseo 與 Omnigent
+
+**Paseo**（預設關閉）讓 Paseo 手機 App 操作這個容器裡的 Claude Code、Codex 與 Pi。它需要一個 HTTPS
+網址，例如掛在 Cloudflare Access 後面的 Cloudflare tunnel 主機名稱，或 `tailscale serve` 的名稱：
+
+```bash
+scripts/install.sh --set WOOW_OD_PASEO=on --set OPENDESIGN_PASEO_ORIGIN=https://od.example.com \
+  --set OD_ALLOWED_ORIGINS=http://127.0.0.1:7456,http://localhost:7456,https://od.example.com
+```
+
+接著在 OpenDesign 打開 Paseo 卡片（或 `https://od.example.com/paseo/setup/`），在那裡登入 agent 並配對
+App。沒有同時列在 `OD_ALLOWED_ORIGINS` 的 `https://` 網址，或 `WOOW_OD_AUTH=off` 時，`install.sh` 會拒絕
+`on`。bridge 在 daemon 旁邊執行，不帶 API token，監聽 loopback 的 7460，前面是和 UI 相同的登入。它的狀態
+與配對資料在資料 volume 裡，所以備份會包含它們。relay 需要對外連到 `app.paseo.sh` 的 HTTPS。
+
+**Omnigent** 每次安裝都有：設定 → Omnigent，或 Omnigent 卡片。填入這個容器連得到的 `https://` Omnigent
+伺服器網址和該伺服器上的帳號，這個容器就會成為那台伺服器上的一台機器。請用不具管理權限的專用帳號：
+那台伺服器上能開 session 的人，在這裡會得到 agent 使用者的 shell。中斷連線不會撤銷伺服器上的授權，
+備份也會包含這台主機的身分。
+
 ## 驗證
 
 ```bash

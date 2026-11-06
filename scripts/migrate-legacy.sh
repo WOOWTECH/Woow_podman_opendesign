@@ -332,6 +332,7 @@ app_render() {
   ql_render "$w/src" "$env" "$REPO/quadlet/render-vars" "$w/out" "${RENDER_ARGS[@]}"
   cp -p "$REPO/config/nginx.conf" "$REPO/config/od-export-bridge.js" "$w/out/config/"
   cp -p "$REPO/config/nginx-auth.$auth.conf" "$w/out/config/nginx-auth.conf"
+  cp -p "$REPO/config/nginx-paseo.off.conf" "$w/out/config/nginx-paseo.conf"
   ql_dryrun "$w/out" --verify --ref-dir "$QL_QUADLET_DIR_REF" \
     || ql_die "the rendered units failed the Quadlet dry-run; nothing was installed"
 }

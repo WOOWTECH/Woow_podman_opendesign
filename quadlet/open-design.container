@@ -15,7 +15,7 @@ Documentation=https://github.com/WOOWTECH/Woow_podman_opendesign
 [Container]
 ContainerName=open-design
 # Built from Dockerfile.full by scripts/install.sh; the tag is the repo VERSION file.
-Image=localhost/woow-open-design:4.1.2
+Image=localhost/woow-open-design:4.2.0
 Pull=never
 Network=open-design.network
 HostName=open-design
@@ -48,7 +48,9 @@ HealthInterval=30s
 HealthTimeout=10s
 HealthRetries=5
 HealthStartPeriod=60s
-PodmanArgs=--stop-timeout=15
+# The daemon closes within 10 s (headless-entry.mjs); with Paseo on, its supervisor then gives Paseo
+# up to 30 s more (rootfs/usr/local/bin/podman-opendesign).
+PodmanArgs=--stop-timeout=45
 
 [Service]
 # A container stopped by systemd is stopped with SIGTERM: an entrypoint that does not
@@ -56,7 +58,7 @@ PodmanArgs=--stop-timeout=15
 SuccessExitStatus=143
 Restart=always
 TimeoutStartSec=300
-TimeoutStopSec=45
+TimeoutStopSec=60
 
 [Install]
 WantedBy=default.target
