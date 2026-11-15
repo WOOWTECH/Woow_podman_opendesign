@@ -31,7 +31,8 @@ HealthStartPeriod=15s
 [Service]
 SuccessExitStatus=143
 Restart=always
-TimeoutStartSec=300
+# First rootless UID mapping can exceed five minutes on small x86 hosts.
+TimeoutStartSec=900
 TimeoutStopSec=30
 
 [Install]
