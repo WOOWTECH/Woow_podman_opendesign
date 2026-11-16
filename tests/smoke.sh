@@ -197,6 +197,15 @@ for c in open-design open-design-terminal; do
     pass "A14 $c cannot see the MCP sockets or state"
   fi
 done
+# Default mapping: uid 10001 is a subordinate uid on the host. Under keep-id it would be this account.
+pid=$(podman inspect --format '{{.State.Pid}}' open-design-mcp 2>/dev/null || true)
+huid=''
+[[ $pid =~ ^[1-9][0-9]*$ ]] && huid=$(awk '/^Uid:/ { print $3 }' "/proc/$pid/status" 2>/dev/null || true)
+if [[ -n $huid && $huid != "$(id -u)" ]]; then
+  pass "A14 the MCP server runs as host uid $huid, not as $(id -un)"
+else
+  fail "A14 the MCP server runs as host uid '${huid:-?}'"
+fi
 
 # A15 the web terminal: behind the sign-in, and it refuses a cross-site WebSocket even with the sign-in
 ws=(-H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: c21va2Utd29vdy10ZXN0IQ==' -H 'Sec-WebSocket-Protocol: tty')

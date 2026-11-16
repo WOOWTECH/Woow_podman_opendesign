@@ -16,6 +16,8 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 . "$REPO/scripts/lib/quadlet-lib.sh"
 # shellcheck source=common.sh
 . "$REPO/scripts/common.sh"
+# shellcheck source=od-helpers.sh
+. "$REPO/scripts/od-helpers.sh"
 
 no_backup=0
 while (($#)); do
@@ -45,6 +47,9 @@ fi
 
 ql_warn "upgrade failed; rolling back to the units saved in $snap/units"
 app_snapshot_restore "$snap/units" || ql_die "rollback failed: no usable snapshot. Inspect $snap and journalctl --user -u open-design.service"
+# The new MCP unit may already have taken its volumes over (:U); a restored keep-id unit needs them back.
+systemctl --user stop open-design-mcp.service || true
+od_align_mcp_ownership || ql_warn "could not give the MCP volumes to the uid of the restored MCP unit"
 systemctl --user restart open-design.service || true
 # Not tests/smoke.sh: this checkout's smoke test describes the new version, which may have other units.
 if ql_wait_container_healthy open-design 300 && ql_wait_container_healthy open-design-nginx 120; then
