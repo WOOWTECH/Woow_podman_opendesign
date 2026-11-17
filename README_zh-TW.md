@@ -27,7 +27,7 @@
 | **nginx 前端** | `open-design-nginx`（單元 `open-design-nginx.service`），釘版 `nginx:1.30.4-alpine`，加入 daemon 的 namespace（`Network=container:open-design`），隨 daemon 一起啟停。 |
 | **資料** | 單一 volume `open-design_open_design_data`（`/app/.od`）：專案、`app.sqlite` 以及位於 `$HOME=/app/.od/home` 的 agent 登入資料。 |
 | **資源限制** | `PidsLimit` 512 / 128 與記憶體、CPU 限制現在真的生效。podman-compose 1.0.6 會默默忽略 `pids_limit`，所以 compose 部署其實跑在 2048 的預設值。 |
-| **Rootless** | `UserNS=keep-id:uid=1001,gid=1001`、唯讀根檔案系統、`NoNewPrivileges`，`/tmp` 為 tmpfs。 |
+| **Rootless** | daemon 與 terminal 用 `UserNS=keep-id:uid=1001,gid=1001`；MCP 伺服器以 podman 預設對應的 uid 10001 執行，在主機上是一個 subordinate uid。唯讀根檔案系統、`NoNewPrivileges`，`/tmp` 為 tmpfs。 |
 
 > **憑證檢查在哪裡。** 上游的 `OD_API_TOKEN` 只對**非 loopback** 來源強制
 > （`apps/daemon/src/api-token-auth.ts`；桌面 UI 流程依賴此豁免）。nginx 永遠是從 loopback 連到 daemon，

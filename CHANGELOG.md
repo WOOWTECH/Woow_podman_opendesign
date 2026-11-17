@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **The MCP server leaves keep-id.** `open-design-mcp` still runs as uid 10001, now in podman's default
+  rootless mapping: on the host that is a subordinate uid (110000 with the usual `/etc/subuid` start of
+  100000), no longer this account. Rootless podman keeps a chowned copy of the whole image for every
+  keep-id mapping, so the MCP server's own mapping cost a second copy (5.5 GB for 4.2.1); the daemon and
+  the terminal keep sharing the first. The copy an existing install already has is freed when its image
+  is removed.
+- Both MCP volumes are mounted with `:U`: the first start takes over the state of an existing install
+  (the token and the tool switches stay as they are), and every start takes over a restore made by any
+  tool. `restore.sh` gives the restored MCP state to the uid of the installed MCP unit, and the automatic
+  rollback of `upgrade.sh` gives both volumes back to this account when it restores keep-id units.
+- Going back to an older checkout by hand: stop `open-design.service`, run
+  `podman unshare chown -R 0:0` on the mountpoints of `open-design_mcp_data` and `open-design_mcp_run`
+  (`podman volume inspect --format '{{.Mountpoint}}' <volume>`), then that checkout's `install.sh`.
+
 ## 4.2.1 — 2026-11-06
 
 Findings from testing 4.2.0 through a Cloudflare tunnel with the official Paseo web app and woowtech smart.

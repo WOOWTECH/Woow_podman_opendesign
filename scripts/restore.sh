@@ -58,7 +58,8 @@ if [[ -n $mcp_archive ]] && podman volume exists open-design_mcp_data; then
   podman unshare find "$mp" -mindepth 1 -delete
   podman volume import open-design_mcp_data "$mcp_archive" \
     || ql_die "podman volume import failed for the MCP state; the previous state is in $pre"
-  od_repair_data_ownership open-design_mcp_data
+  # Owned by the uid the installed MCP unit runs as, whichever layout the archive was made with.
+  od_align_mcp_ownership
 fi
 systemctl --user start open-design.service
 app_wait_healthy open-design 300 open-design.service

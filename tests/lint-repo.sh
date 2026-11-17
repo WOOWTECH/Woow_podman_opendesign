@@ -67,6 +67,14 @@ lint_local() {
     grep -qxF "Image=localhost/woow-open-design:$version" "$f" || fail "$f does not use the image of VERSION $version"
     grep -qE '^PublishPort=' "$f" && fail "$f publishes a port; only the daemon publishes nginx's port"
   done
+  # The MCP server keeps its own uid 10001 in podman's default mapping. keep-id would run it as this
+  # account on the host and make podman keep one more chowned copy of the image; :U gives it its volumes.
+  f=quadlet/open-design-mcp.container
+  grep -qxF 'User=10001:10001' "$f" || fail "$f does not run as 10001:10001"
+  grep -qE '^UserNS=' "$f" && fail "$f sets UserNS=; the MCP server uses the default mapping"
+  for v in open-design-mcp-data.volume:/data/mcp:U open-design-mcp-run.volume:/run/od-mcp:U; do
+    grep -qxF "Volume=$v" "$f" || fail "$f does not mount $v"
+  done
   # The core is pinned by digest, and the image's own version label agrees with VERSION.
   grep -qE '^ARG BUILD_FROM=ghcr\.io/woowtech/open-design-core:[^@]+@sha256:[0-9a-f]{64}$' Dockerfile.full \
     || fail "Dockerfile.full does not pin open-design-core by digest"

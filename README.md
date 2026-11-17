@@ -31,7 +31,7 @@ mounts nothing from your home directory except its own config files.
 | **nginx front** | `open-design-nginx` (unit `open-design-nginx.service`), pinned `nginx:1.30.4-alpine`, joins the daemon's namespace (`Network=container:open-design`). It stops and starts with the daemon. |
 | **Data** | one volume, `open-design_open_design_data` (`/app/.od`): projects, `app.sqlite` and the agent logins in `$HOME=/app/.od/home`. |
 | **Limits** | `PidsLimit` 512 / 128 and memory + CPU limits are really applied now. podman-compose 1.0.6 silently dropped `pids_limit`, so the compose deployment ran with the 2048 default. |
-| **Rootless** | `UserNS=keep-id:uid=1001,gid=1001`, read-only root filesystem, `NoNewPrivileges`, tmpfs for `/tmp`. |
+| **Rootless** | `UserNS=keep-id:uid=1001,gid=1001` for the daemon and the terminal; the MCP server runs as uid 10001 of podman's default mapping, a subordinate uid on the host. Read-only root filesystem, `NoNewPrivileges`, tmpfs for `/tmp`. |
 
 > **Where the credential check lives.** Upstream's `OD_API_TOKEN` is only enforced for **non-loopback**
 > callers (`apps/daemon/src/api-token-auth.ts`; the desktop UI flow depends on the exemption). nginx

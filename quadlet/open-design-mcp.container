@@ -3,6 +3,12 @@
 # Its own container, so it has its own uid (10001, never the daemon's 1001), limits and restarts. It joins
 # the daemon's network namespace and listens on 127.0.0.1:8081 there; nothing publishes that port. Clients
 # reach it through nginx: /mcp (Bearer), /private_<token>/mcp and /mcp-admin/ (Basic auth).
+#
+# No UserNS=: in podman's default rootless mapping uid 10001 is a subordinate uid on the host, never this
+# account, and the container uses the image's layers as they are. Rootless podman keeps a chowned copy of
+# the whole image for every keep-id mapping; the daemon and the terminal share theirs. :U gives both
+# volumes to uid 10001 at every start, so the state of an install that ran this unit with keep-id, or a
+# restore made by any tool, is taken over as it is.
 [Unit]
 Description=Woow OpenDesign MCP server
 Documentation=https://github.com/WOOWTECH/Woow_podman_opendesign
@@ -16,11 +22,10 @@ Pull=never
 Network=container:open-design
 Label=io.woowtech.stack=open-design
 User=10001:10001
-UserNS=keep-id:uid=10001,gid=10001
 ReadOnly=true
 Tmpfs=/tmp
-Volume=open-design-mcp-data.volume:/data/mcp
-Volume=open-design-mcp-run.volume:/run/od-mcp
+Volume=open-design-mcp-data.volume:/data/mcp:U
+Volume=open-design-mcp-run.volume:/run/od-mcp:U
 NoNewPrivileges=true
 PidsLimit=128
 PodmanArgs=--memory=320m --cpus=0.5 --entrypoint=/opt/woow/bin/paas-opendesign-mcp
