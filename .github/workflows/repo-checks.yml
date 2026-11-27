@@ -60,3 +60,17 @@ jobs:
       # agent CLI or has another version of one.
       - name: Build the image from the pinned core
         run: docker build --build-arg BUILD_VERSION="$(cat VERSION)" -f Dockerfile.full -t woow-open-design:ci .
+
+      # Keep tini as PID 1 while bypassing the product launcher for this
+      # account-free, network-denied managed-runtime lifecycle check.
+      - name: Offline Agent Connect managed-runtime smoke
+        run: |
+          set -Eeuo pipefail
+          docker run --rm --platform linux/amd64 \
+            --network none \
+            --user 1001:1001 \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=1g,uid=1001,gid=1001,mode=0700 \
+            --entrypoint /sbin/tini \
+            woow-open-design:ci \
+            -- node /opt/opendesign-paseo/scripts/smoke-managed-runtime.mjs

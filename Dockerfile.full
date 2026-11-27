@@ -20,20 +20,21 @@ RUN /usr/local/bin/npm ci --include=dev --ignore-scripts --no-audit --no-fund \
     && /usr/local/bin/npm run build \
     && test -f dist/index.html
 
-# Paseo's managed runtime (@getpaseo/cli 0.11.2, lock-pinned), built into the image as the PaaS
+# Paseo's managed runtime (@getpaseo/cli 0.17.5, lock-pinned), built into the image as the PaaS
 # image does, so enabling Paseo downloads nothing and writes no packages to the data volume.
 FROM ${BUILD_FROM} AS paseo-runtime
 USER root
-COPY paseo/runtime/vendor/pi-paseo/ /opt/pi-paseo/
+RUN apk add --no-cache python3 libstdc++ \
+    && apk add --no-cache --virtual .agent-connect-build build-base
+COPY paseo/runtime/ /opt/opendesign-paseo/
 COPY paseo/legal/getpaseo-Apache-2.0.txt /opt/opendesign-paseo/managed-runtime/LICENSES/getpaseo-Apache-2.0.txt
 RUN set -eu; \
     export npm_config_cache=/tmp/npm-cache; \
-    ROOT=$(node --input-type=module -e 'import {prepareRuntimeManifest} from "/opt/pi-paseo/src/runtime-layout.mjs"; console.log(prepareRuntimeManifest({runtimeDir:"/opt/opendesign-paseo/managed-runtime"}))'); \
-    /usr/local/bin/npm ci --prefix "$ROOT" --omit=dev --no-audit --no-fund; \
-    test "$(node "$ROOT/node_modules/@getpaseo/cli/bin/paseo" --version)" = 0.11.2; \
-    test -s "$ROOT/node_modules/@getpaseo/server/dist/server/web-ui/index.html"; \
-    node --input-type=module -e 'import {markRuntimeReady,runtimeReady} from "/opt/pi-paseo/src/runtime-layout.mjs"; const loc={runtimeDir:"/opt/opendesign-paseo/managed-runtime"}; markRuntimeReady(loc); if(!runtimeReady(loc)) process.exit(1)'; \
+    cd /opt/opendesign-paseo; \
+    /usr/local/bin/npm ci --omit=dev --ignore-scripts --no-audit --no-fund; \
+    node scripts/prepare-managed-runtime.mjs /opt/opendesign-paseo/managed-runtime; \
     chmod -R a+rX,go-w /opt/opendesign-paseo/managed-runtime; \
+    apk del .agent-connect-build; \
     rm -rf /tmp/npm-cache /root/.npm
 
 FROM ${BUILD_FROM}
