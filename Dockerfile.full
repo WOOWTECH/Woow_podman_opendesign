@@ -75,6 +75,7 @@ RUN sh /tmp/mcp-runtime/install.sh && rm -rf /tmp/mcp-runtime
 # always in the image; WOOW_OD_PASEO=on in open-design.env is what starts them.
 COPY paseo/runtime/ /opt/opendesign-paseo/
 COPY paseo/paseo-launch.py /opt/woow-opendesign/paseo-launch.py
+COPY paseo/runtime/launcher/open-design.json paseo/runtime/launcher/SKILL.md /app/plugins/_official/woow/woow-paseo/
 RUN cd /opt/opendesign-paseo \
     && /usr/local/bin/npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
     && /usr/local/bin/npm cache clean --force \
