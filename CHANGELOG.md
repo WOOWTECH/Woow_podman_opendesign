@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased
+## 4.3.0 — 2026-11-27
+
+- **Agent Connect.** The Paseo card is now Agent Connect (opendesign-paseo-plugin 0.3.0, official Paseo 0.17.5,
+  up from 0.11.2). The plugin id, the `/paseo/setup/` path, the provider homes and the workspaces are
+  unchanged. The setup page offers three fixed client targets: the official Paseo app, woowtech smart and
+  apporo smart. Each has its own App origin, relay (`relay.paseo.sh`, `relay.woowtech.io`, `relay.apporo.ai`)
+  and host brand; choosing a target only stores the choice, so stop and start the service to apply it.
+- The managed runtime is built into the image (`/opt/opendesign-paseo/managed-runtime`): `node-pty` is
+  rebuilt for musl and must pass a real PTY spawn before the runtime is marked ready, so enabling Paseo
+  downloads nothing and writes no packages to the data volume.
+- CI now starts the baked runtime offline under tini (UID 1001, read-only image, no network) and runs the
+  product entrypoint under rootless podman, including the managed daemon and its normal stop.
+- `paseo/` is a copy of the published `v0.3.0` release (see `paseo/SOURCE.md`).
+- Going back to an earlier version after using the Devices page of Paseo 0.17.5 (extra listeners) needs the
+  manual steps in the plugin's Agent Connect guide.
 
 - **The MCP server leaves keep-id.** `open-design-mcp` still runs as uid 10001, now in podman's default
   rootless mapping: on the host that is a subordinate uid (110000 with the usual `/etc/subuid` start of

@@ -136,13 +136,15 @@ scripts/install.sh --set WOOW_OD_PASEO=on --set OPENDESIGN_PASEO_ORIGIN=https://
 接著在 OpenDesign 打開 Paseo 卡片（或 `https://od.example.com/paseo/setup/`），在那裡登入 agent 並配對
 App。沒有同時列在 `OD_ALLOWED_ORIGINS` 的 `https://` 網址，或 `WOOW_OD_AUTH=off` 時，`install.sh` 會拒絕
 `on`。bridge 在 daemon 旁邊執行，不帶 API token，監聽 loopback 的 7460，前面是和 UI 相同的登入。它的狀態
-與配對資料在資料 volume 裡，所以備份會包含它們。relay 需要對外連到 `app.paseo.sh` 的 HTTPS。
+與配對資料在資料 volume 裡，所以備份會包含它們。需要對外連到你所選用戶端目標的 relay（`relay.paseo.sh`、
+`relay.woowtech.io` 或 `relay.apporo.ai`）的 HTTPS。
 
-用官方 Paseo App 或網頁版（`app.paseo.sh`）配對。配對連結也能在 woowtech smart 網頁版（`smart.woowtech.io`，
-Paseo 的 fork）開啟；它會提醒這條連結走 Paseo 的 relay（`relay.paseo.sh`）而不是 `relay.woowtech.io`，確認後
-即可使用。Claude Code、Codex、Pi 與 OpenCode 都能用。同一段對話可以在該 agent 的模型之間切換，對話紀錄會保留；
-換別的 agent 要開新分頁，原本的分頁仍保有各自的對話。Copilot、Antigravity 與 Muse Code 顯示 Error，因為這個
-映像沒有安裝它們。
+Paseo 卡片現在是 **Agent Connect**。在它的設定頁選擇要配對的用戶端：官方 Paseo App 或網頁版（`app.paseo.sh`）、
+woowtech smart（`smart.woowtech.io`）或 apporo smart（`smart.apporo.ai`），再從該 App 配對。每個目標有自己的
+relay 與主機品牌，不要把某個目標的連結貼進另一個 App。選擇目標只會儲存選擇：要停止再啟動服務才會生效，待套用
+期間設定頁不會產生連結。Claude Code、Codex、Pi 與 OpenCode 都能在 App 裡使用。同一段對話可以在該 agent 的
+模型之間切換，對話紀錄會保留；換別的 agent 要開新分頁，原本的分頁仍保有各自的對話。Copilot、Antigravity 與
+Muse Code 顯示 Error，因為這個映像沒有安裝它們。
 
 **放在 Cloudflare tunnel 後面時。** Cloudflare Access 會把沒有瀏覽器登入的請求導到它的登入頁，包括 MCP
 用戶端、`curl`，以及 Paseo bridge 自己的 API 呼叫。不開 Access 時，UI 的 Basic 登入是唯一的憑證檢查，而
