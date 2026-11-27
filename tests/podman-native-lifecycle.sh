@@ -18,6 +18,7 @@ trap cleanup EXIT INT TERM
 [[ $(podman info --format '{{.Host.Security.Rootless}}') == true ]]
 podman volume create "$volume" >/dev/null
 podman run -d \
+  --pull=never \
   --name "$container" \
   --network none \
   --userns=keep-id:uid=1001,gid=1001 \
@@ -67,4 +68,9 @@ podman stop --time 45 "$container" >/dev/null
 [[ $(podman inspect --format '{{.State.OOMKilled}}' "$container") == false ]]
 exit_code=$(podman inspect --format '{{.State.ExitCode}}' "$container")
 [[ $exit_code == 0 || $exit_code == 143 ]]
+cleanup
+if podman container exists "$container" || podman volume exists "$volume"; then
+  echo 'owned native Podman test resources remain' >&2
+  exit 1
+fi
 printf '{"rootless":true,"uid":1001,"tiniPid1":true,"readOnlyRoot":true,"nativeHealth":true,"bridgeHealth":true,"bakedRuntimeReady":true,"normalStop":true,"exitCode":%s}\n' "$exit_code"

@@ -87,4 +87,10 @@ jobs:
           podman load -i "$RUNNER_TEMP/woow-open-design-ci.tar"
 
       - name: Rootless Podman native-entrypoint lifecycle smoke
-        run: tests/podman-native-lifecycle.sh localhost/woow-open-design:ci
+        run: |
+          set -Eeuo pipefail
+          # Docker archives may canonicalize short names to docker.io rather
+          # than localhost. Prove the loaded config ID, then run those bytes.
+          image_id=$(docker image inspect --format '{{.Id}}' woow-open-design:ci)
+          podman image exists "$image_id"
+          tests/podman-native-lifecycle.sh "$image_id"
