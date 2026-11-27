@@ -35,7 +35,14 @@ ready=0
 for _ in $(seq 1 120); do
   [[ $(podman inspect --format '{{.State.Running}}' "$container") == true ]] || break
   if podman exec "$container" curl -fsS -o /dev/null http://127.0.0.1:7457/api/health \
-    && podman exec "$container" curl -fsS -o /dev/null http://127.0.0.1:7460/healthz; then
+    && podman exec "$container" curl -fsS -o /dev/null http://127.0.0.1:7460/healthz \
+    && podman exec "$container" node --input-type=module -e '
+      try {
+        const response=await fetch("http://127.0.0.1:7460/api/paseo-bridge",{signal:AbortSignal.timeout(3000)});
+        const state=await response.json();
+        if(!response.ok||!state.desiredEnabled||!state.daemon?.owned||!state.daemon?.reachable||!state.onboarding?.initialized||["running","error"].includes(state.operation?.status))process.exit(1);
+      } catch { process.exit(1); }
+    '; then
     ready=1
     break
   fi
@@ -73,4 +80,4 @@ if podman container exists "$container" || podman volume exists "$volume"; then
   echo 'owned native Podman test resources remain' >&2
   exit 1
 fi
-printf '{"rootless":true,"uid":1001,"tiniPid1":true,"readOnlyRoot":true,"nativeHealth":true,"bridgeHealth":true,"bakedRuntimeReady":true,"normalStop":true,"exitCode":%s}\n' "$exit_code"
+printf '{"rootless":true,"uid":1001,"tiniPid1":true,"readOnlyRoot":true,"nativeHealth":true,"bridgeHealth":true,"bakedRuntimeReady":true,"managedDaemonReachable":true,"nativeOnboardingInitialized":true,"normalStop":true,"ownedResourcesCleaned":true,"exitCode":%s}\n' "$exit_code"
