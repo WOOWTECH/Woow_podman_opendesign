@@ -74,3 +74,17 @@ jobs:
             --entrypoint /sbin/tini \
             woow-open-design:ci \
             -- node /opt/opendesign-paseo/scripts/smoke-managed-runtime.mjs
+
+      - name: Install Podman for rootless native lifecycle smoke
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Load the candidate image into rootless Podman
+        run: |
+          set -Eeuo pipefail
+          docker save woow-open-design:ci -o "$RUNNER_TEMP/woow-open-design-ci.tar"
+          podman load -i "$RUNNER_TEMP/woow-open-design-ci.tar"
+
+      - name: Rootless Podman native-entrypoint lifecycle smoke
+        run: tests/podman-native-lifecycle.sh localhost/woow-open-design:ci
