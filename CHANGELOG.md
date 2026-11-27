@@ -13,8 +13,13 @@
 - CI now starts the baked runtime offline under tini (UID 1001, read-only image, no network) and runs the
   product entrypoint under rootless podman, including the managed daemon and its normal stop.
 - `paseo/` is a copy of the published `v0.3.0` release (see `paseo/SOURCE.md`).
-- Going back to an earlier version after using the Devices page of Paseo 0.17.5 (extra listeners) needs the
-  manual steps in the plugin's Agent Connect guide.
+- Going back to 4.2.1 is a data-format rollback for Agent Connect: Paseo 0.11.2 refuses the relay setting
+  `requireProtectedSecurity` that 0.17.5 writes to `paseo/daemon/config.json` in the data volume (for every
+  client target). After `upgrade.sh` restores the old units on its own, or after a manual checkout of 4.2.1,
+  the Paseo service stays in an error state until the pre-upgrade archive is restored with
+  `scripts/restore.sh`, or until that one key is removed from the file (keep mode 0600); the rest of
+  OpenDesign keeps working, and the conversations stay readable. Extra listeners added on the Devices page of
+  Paseo 0.17.5 also need the manual steps in the plugin's Agent Connect guide.
 
 - **The MCP server leaves keep-id.** `open-design-mcp` still runs as uid 10001, now in podman's default
   rootless mapping: on the host that is a subordinate uid (110000 with the usual `/etc/subuid` start of
