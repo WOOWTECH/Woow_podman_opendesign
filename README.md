@@ -148,14 +148,17 @@ Then open the Paseo card in OpenDesign (or `https://od.example.com/paseo/setup/`
 agents there and pair the app. `install.sh` refuses `on` without an `https://` origin that is also in
 `OD_ALLOWED_ORIGINS`, and with `WOOW_OD_AUTH=off`. The bridge runs beside the daemon without the API
 token, on loopback port 7460, behind the UI's sign-in. Its state and the pairing live in the data
-volume, so a backup contains them. It needs outbound HTTPS to `app.paseo.sh` for the relay.
+volume, so a backup contains them. It needs outbound HTTPS to the relay of the client target you choose
+(`relay.paseo.sh`, `relay.woowtech.io` or `relay.apporo.ai`).
 
-Pair from the official Paseo app or web app (`app.paseo.sh`). The link also opens in woowtech smart's web
-app (`smart.woowtech.io`, a Paseo fork); it warns that the link uses Paseo's relay (`relay.paseo.sh`)
-instead of `relay.woowtech.io`, and works after you confirm. Claude Code, Codex, Pi and OpenCode are all
-available there. A conversation can switch between that agent's models and keeps its history; another
-agent needs a new tab, and the earlier tabs keep their conversations. Copilot, Antigravity and Muse Code
-show Error because this image does not include them.
+The Paseo card is now **Agent Connect**. On its setup page choose the client you will pair: the official
+Paseo app or web app (`app.paseo.sh`), woowtech smart (`smart.woowtech.io`) or apporo smart
+(`smart.apporo.ai`), then pair from that app. Each target has its own relay and host brand, so never paste
+a link made for one target into another app. Choosing a target only stores the choice: stop and start the
+service to apply it, and the page creates no link while a change is pending. Claude Code, Codex, Pi and
+OpenCode are all available in the app. A conversation can switch between that agent's models and keeps its
+history; another agent needs a new tab, and the earlier tabs keep their conversations. Copilot,
+Antigravity and Muse Code show Error because this image does not include them.
 
 **Behind a Cloudflare tunnel.** Cloudflare Access sends anything without a browser login to its login
 page, which includes MCP clients, `curl` and the Paseo bridge's own API calls. Without Access, the UI's

@@ -78,6 +78,26 @@ lint_local() {
   # The core is pinned by digest, and the image's own version label agrees with VERSION.
   grep -qE '^ARG BUILD_FROM=ghcr\.io/woowtech/open-design-core:[^@]+@sha256:[0-9a-f]{64}$' Dockerfile.full \
     || fail "Dockerfile.full does not pin open-design-core by digest"
+  for fragment in \
+    '.agent-connect-build build-base' \
+    'python3' \
+    'node scripts/prepare-managed-runtime.mjs /opt/opendesign-paseo/managed-runtime' \
+    'apk del .agent-connect-build'
+  do
+    grep -Fq "$fragment" Dockerfile.full || fail "missing Agent Connect build contract: $fragment"
+  done
+  ! grep -Fq 'markRuntimeReady(loc)' Dockerfile.full \
+    || fail 'Dockerfile.full must use the candidate preparer, not inline ready receipts'
+  grep -Fq "npm_config_build_from_source: 'true'" paseo/runtime/scripts/prepare-managed-runtime.mjs \
+    || fail 'candidate preparer must force node-pty source build on musl'
+  grep -Fq "['ci', '--prefix', root, '--omit=dev', '--ignore-scripts'" paseo/runtime/scripts/prepare-managed-runtime.mjs \
+    || fail 'candidate preparer must suppress dependency lifecycle scripts'
+  grep -Fq "['rebuild', '--prefix', root, 'node-pty', '--ignore-scripts=false'" paseo/runtime/scripts/prepare-managed-runtime.mjs \
+    || fail 'candidate preparer must allow lifecycle scripts only for explicit node-pty rebuild'
+  grep -Fq "pty.spawn('/bin/sh'" paseo/runtime/scripts/prepare-managed-runtime.mjs \
+    || fail 'candidate preparer must run a real PTY before marking ready'
+  node -e 'const p=require("./paseo/runtime/package.json"),m=require("./paseo/runtime/launcher/open-design.json");if(m.title!=="Agent Connect"||m.version!==p.version)process.exit(1)' \
+    || fail 'Agent Connect launcher title/version must align with the package candidate'
   grep -qxF "ARG BUILD_VERSION=$version" Dockerfile.full || fail "Dockerfile.full BUILD_VERSION differs from VERSION $version"
   # The registry image is pinned by digest.
   unit_img=$(sed -n 's/^Image=//p' quadlet/open-design-nginx.container)

@@ -1,6 +1,25 @@
 # Changelog
 
-## Unreleased
+## 4.3.0 — 2026-11-27
+
+- **Agent Connect.** The Paseo card is now Agent Connect (opendesign-paseo-plugin 0.3.0, official Paseo 0.17.5,
+  up from 0.11.2). The plugin id, the `/paseo/setup/` path, the provider homes and the workspaces are
+  unchanged. The setup page offers three fixed client targets: the official Paseo app, woowtech smart and
+  apporo smart. Each has its own App origin, relay (`relay.paseo.sh`, `relay.woowtech.io`, `relay.apporo.ai`)
+  and host brand; choosing a target only stores the choice, so stop and start the service to apply it.
+- The managed runtime is built into the image (`/opt/opendesign-paseo/managed-runtime`): `node-pty` is
+  rebuilt for musl and must pass a real PTY spawn before the runtime is marked ready, so enabling Paseo
+  downloads nothing and writes no packages to the data volume.
+- CI now starts the baked runtime offline under tini (UID 1001, read-only image, no network) and runs the
+  product entrypoint under rootless podman, including the managed daemon and its normal stop.
+- `paseo/` is a copy of the published `v0.3.0` release (see `paseo/SOURCE.md`).
+- Going back to 4.2.1 is a data-format rollback for Agent Connect: Paseo 0.11.2 refuses the relay setting
+  `requireProtectedSecurity` that 0.17.5 writes to `paseo/daemon/config.json` in the data volume (for every
+  client target). After `upgrade.sh` restores the old units on its own, or after a manual checkout of 4.2.1,
+  the Paseo service stays in an error state until the pre-upgrade archive is restored with
+  `scripts/restore.sh`, or until that one key is removed from the file (keep mode 0600); the rest of
+  OpenDesign keeps working, and the conversations stay readable. Extra listeners added on the Devices page of
+  Paseo 0.17.5 also need the manual steps in the plugin's Agent Connect guide.
 
 - **The MCP server leaves keep-id.** `open-design-mcp` still runs as uid 10001, now in podman's default
   rootless mapping: on the host that is a subordinate uid (110000 with the usual `/etc/subuid` start of
