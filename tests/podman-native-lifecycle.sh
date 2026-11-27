@@ -24,7 +24,7 @@ podman run -d \
   --userns=keep-id:uid=1001,gid=1001 \
   --user 1001:1001 \
   --read-only \
-  --tmpfs /tmp:rw,nosuid,nodev,size=1g,uid=1001,gid=1001,mode=0700 \
+  --tmpfs /tmp:rw,nosuid,nodev,size=1g,mode=1777 \
   --volume "$volume:/app/.od" \
   --env WOOW_OD_PASEO=on \
   --env OD_ALLOWED_ORIGINS=https://localhost:27457 \
