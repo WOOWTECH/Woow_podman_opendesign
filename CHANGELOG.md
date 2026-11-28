@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.3.1 — 2026-11-28
+
+- **Install and upgrade no longer fail at random while building `node-pty`.** Agent Connect 0.3.1 compiles
+  `node-pty` for musl against the Node headers that ship in the image. Before, node-gyp downloaded them from
+  unofficial-builds.nodejs.org. That host publishes an IPv4 and an IPv6 address and Node gives each address only
+  250 ms, while from Asia its IPv4 connect takes 0.23–0.26 s (sometimes over a second), so on a host without IPv6
+  routing `podman build` stopped with `NATIVE_NODE_PTY_BUILD_FAILED` now and then: a fresh 4.3.0 install failed
+  once on 2026-11-27 and three times in a row on another fresh VM on 2026-11-28 (the installer changed nothing each
+  time; resolving that host to its IPv4 address alone made the same build pass). A failed build now keeps npm's
+  own error in the log.
+- Paseo stays 0.17.5 and the runtime revision stays `0.17.5-r2-186f173be43b`: upgrading from 4.3.0 keeps the
+  installed runtime, the provider homes, the pairing and the conversations. The card shows Agent Connect 0.3.1.
+- `paseo/` is a copy of the published `v0.3.1` release (see `paseo/SOURCE.md`).
+
 ## 4.3.0 — 2026-11-27
 
 - **Agent Connect.** The Paseo card is now Agent Connect (opendesign-paseo-plugin 0.3.0, official Paseo 0.17.5,
